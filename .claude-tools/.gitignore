@@ -1,0 +1,5 @@
+# Keep plan backups out of git — they're local continuity files, not source
+plan-backups/*.md
+!plan-backups/INDEX.md
+__pycache__/
+*.pyc

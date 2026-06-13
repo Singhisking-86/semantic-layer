@@ -10,6 +10,19 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "ExitPlanMode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude-tools/hooks/backup_plan.py",
+            "statusMessage": "Saving plan backup..."
+          }
+        ]
+      }
     ]
-  }
+  },
+  "plansDirectory": ".claude-tools/plan-backups"
 }
