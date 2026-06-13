@@ -1,5 +1,5 @@
-# Keep plan backups out of git — they're local continuity files, not source
-plan-backups/*.md
-!plan-backups/INDEX.md
+# Auto-generated timestamped plan backups stay local (large, ephemeral)
+plan-backups/20[0-9][0-9]*.md
+# STATE_*.md and INDEX.md are committed — they carry cross-machine continuity
 __pycache__/
 *.pyc
