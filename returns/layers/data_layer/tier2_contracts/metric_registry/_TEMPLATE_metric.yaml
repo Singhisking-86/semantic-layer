@@ -1,0 +1,19 @@
+# Metric spec template — copy per metric. Engine-neutral; derivation in tier-1 terms.
+id: sla_pass_rate
+version: 1
+owner: TBD
+status: draft            # draft | calibrated | published
+definition: >
+  Share of returns whose warehouse-processing (state ④) occurred within 10
+  calendar days of carrier acceptance (state ②), among returns that reached ②.
+grain: return
+numerator: count(return where (state4_date - state2_date) <= 10 days)
+denominator: count(return where state2_date is not null)
+tier1_terms: [Return, "state ② CarrierAccepted", "state ④ WarehouseProcessed", "policy: 10-day SLA"]
+caveats: >
+  Population excludes no-carrier-acceptance returns (rule R3). ③ uses
+  first-DELIVERED (rule R2), which can differ from the legacy mart's last-scan ③.
+calibration_target: >
+  Mart snapshot 2026-05-19: population 665,210; pass 634,093. Match exact or
+  document explained delta.
+freshness: depends on state-④ completeness SLO (≥99.5% within 4 days, rule R7)

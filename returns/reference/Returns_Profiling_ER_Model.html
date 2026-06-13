@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Returns Semantic Layer — Phase 1 Profiling: Evidence &amp; ER Model</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#EDF0F3; --panel:#FFFFFF; --ink:#17222C; --muted:#5C6B78; --line:#C9D2DA;
+    --req:#2A6FB8;      /* request/portal entities  */
+    --carrier:#1F8A5B;  /* carrier event entities   */
+    --wms:#6B4FB3;      /* WMS / warehouse entities */
+    --order:#C99012;    /* order/demand entities    */
+    --fail:#C0392B;     /* broken / failed evidence */
+    --pass:#1F8A5B;
+    --code-bg:#10181F; --code-ink:#D9E2EA;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  @media (prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important}}
+  body{background:var(--bg);color:var(--ink);font-family:'IBM Plex Sans',system-ui,sans-serif;
+       font-size:15px;line-height:1.55;padding-bottom:80px}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 28px}
+  header{border-bottom:1px solid var(--line);background:var(--panel);padding:42px 0 30px}
+  .eyebrow{font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.14em;
+           text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+  h1{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:clamp(26px,4vw,38px);
+     line-height:1.12;letter-spacing:-.01em}
+  .meta-strip{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
+  .meta-strip span{font-family:'IBM Plex Mono',monospace;font-size:12.5px;background:#F2F5F8;
+     border:1px solid var(--line);border-radius:4px;padding:5px 11px;color:var(--muted)}
+  h2{font-family:'Space Grotesk',sans-serif;font-size:22px;font-weight:700;margin:46px 0 6px;letter-spacing:-.01em}
+  .h2-sub{color:var(--muted);font-size:14px;margin-bottom:18px}
+  /* verdict cards */
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;position:relative}
+  .card .pq{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.1em;color:var(--muted);text-transform:uppercase}
+  .card .stat{font-family:'Space Grotesk',sans-serif;font-size:21px;font-weight:700;margin:4px 0 2px}
+  .card p{font-size:13px;color:var(--muted);line-height:1.45}
+  .card.pass{border-left:4px solid var(--pass)}
+  .card.flag{border-left:4px solid var(--order)}
+  .card.fail{border-left:4px solid var(--fail)}
+  /* ER diagram */
+  .er-panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:22px;overflow-x:auto}
+  .er-panel svg{min-width:980px;width:100%;height:auto;font-family:'IBM Plex Sans',sans-serif}
+  .legend{display:flex;flex-wrap:wrap;gap:18px;margin-top:14px}
+  .legend span{display:inline-flex;align-items:center;gap:7px;font-size:13px;color:var(--muted)}
+  .sw{width:14px;height:14px;border-radius:3px;display:inline-block}
+  table{border-collapse:collapse;width:100%;margin:10px 0;font-size:13.5px;background:var(--panel)}
+  th,td{border:1px solid var(--line);padding:8px 11px;text-align:left;vertical-align:top}
+  th{background:#F2F5F8;font-family:'IBM Plex Mono',monospace;font-size:11.5px;letter-spacing:.08em;
+     text-transform:uppercase;color:var(--muted)}
+  code.inline{font-family:'IBM Plex Mono',monospace;font-size:.92em;background:#E4E9EE;border-radius:3px;padding:1px 5px}
+  .note{border-left:3px solid var(--order);background:#FAF6EA;padding:10px 14px;font-size:13.5px;margin:12px 0;border-radius:0 4px 4px 0}
+  .note.bad{border-left-color:var(--fail);background:#FAEDEA}
+  .note.good{border-left-color:var(--pass);background:#EAF5EF}
+  pre{background:var(--code-bg);color:var(--code-ink);font-family:'IBM Plex Mono',monospace;
+      font-size:12.5px;line-height:1.5;border-radius:6px;padding:14px 16px;overflow-x:auto;margin:10px 0}
+  .pill{display:inline-block;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.08em;
+        text-transform:uppercase;padding:2px 8px;border-radius:10px;white-space:nowrap}
+  .pill-dead{background:#FAEDEA;color:#8E2A1C;border:1px solid #E8B9AF}
+  .pill-live{background:#EAF5EF;color:#176A45;border:1px solid #BCDECB}
+  .pill-check{background:#FAF3E2;color:#8F6608;border:1px solid #E8D7AC}
+  @media(max-width:760px){.cards{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="eyebrow">Semantic layer · Phase 1 profiling results · grounded in P1–P14 uploads</div>
+    <h1>What the data says: returns entities, measured relationships, and the road to the state model</h1>
+    <div class="meta-strip">
+      <span>window: 150 days</span>
+      <span>1,192,901 request lines</span>
+      <span>560,912 returns</span>
+      <span>984,213 carrier milestones</span>
+      <span>~7.4M WH item events</span>
+      <span>CDC lag: median 1.6 days</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+<!-- ================= VERDICT SCOREBOARD ================= -->
+<h2>Profiling verdicts</h2>
+<p class="h2-sub">One card per query. Green = assumption confirmed, amber = finding that shapes an L1 rule, red = blocker to resolve.</p>
+<div class="cards">
+  <div class="card pass"><div class="pq">P1 · grain</div><div class="stat">CONFIRMED</div>
+    <p>(RETURNID, ORDERNUMBER, ORDERLINEITEMNUMBER) is unique: 1,192,901 of 1,192,901. Zero null order keys or SKUs. Grain = return request line.</p></div>
+  <div class="card pass"><div class="pq">P2 · lines per return</div><div class="stat">2.13 avg</div>
+    <p>53% of returns are single-line; long tail to 44 lines. Return header is a real entity above the line.</p></div>
+  <div class="card pass"><div class="pq">P3 · repeated SKUs</div><div class="stat">100% order lines</div>
+    <p>All 22,361 repeated (return, SKU) pairs are different order lines. No quantity-expansion rows. Line key is the order line.</p></div>
+  <div class="card flag"><div class="pq">P4 · re-requests</div><div class="stat">1.1%</div>
+    <p>13,173 order lines have 2–6 return requests. L1 needs a request-attempt concept; naive orderline→return joins multi-match.</p></div>
+  <div class="card flag"><div class="pq">P5 · tracking per return</div><div class="stat">5.7% none</div>
+    <p>32,156 returns have no TRACKINGID; the rest exactly one. Likely label-less methods or pre-label requests — never more than one parcel per return.</p></div>
+  <div class="card flag"><div class="pq">P6 · transit duplicates</div><div class="stat">3,285 rows</div>
+    <p>0.33% duplicate (RETURNID, timestamp) rows on 150d (none in the 90d PBIX copy). L1 load needs a dedupe rule.</p></div>
+  <div class="card flag"><div class="pq">P7 · events per return</div><div class="stat">max 3</div>
+    <p>85.2% have 2 milestones, 14.2% one, 0.6% three (all third rows are DELIVERED). Milestone log, not full history.</p></div>
+  <div class="card pass"><div class="pq">P8 · milestone semantics</div><div class="stat">row1=scan, row2=delivered</div>
+    <p>Row 1 is IN_TRANSIT for 82.6% (13.3% jump straight to DELIVERED — scan-in missed). Row 2 is DELIVERED for 99.3%.</p></div>
+  <div class="card pass"><div class="pq">P9 · cross-table keys</div><div class="stat">0 mismatches</div>
+    <p>90.7% of returns have transit rows; every match carries the identical TRACKINGID in both tables.</p></div>
+  <div class="card fail"><div class="pq">P10 · RETURNOPTION</div><div class="stat">constant '1'</div>
+    <p>Single value across all 1.19M rows. Not the return-method column. Dead for analytics.</p></div>
+  <div class="card flag"><div class="pq">P11 · CDC ingest lag</div><div class="stat">1.6d median · 3.8d max</div>
+    <p>INSERTED_ON trails the request by 0.8–3.8 days (p95 = 3.6d). Six discrete batch signatures, ~daily loads. 188 rows (0.4%) have negative lag, worst −24 days — DQ flag.</p></div>
+  <div class="card flag"><div class="pq">P12 · column vitality</div><div class="stat">3 dead · 3 live</div>
+    <p>NOTES, VOUCHERVALUE, EXTERNALREFERENCE: empty. RETURNCOST 100% filled, WAREHOUSEREFERENCE 99.7%, ORDERSTATUS has 6 values — profile next.</p></div>
+  <div class="card fail"><div class="pq">P13 · ZZ → WMS bridge</div><div class="stat">0% match</div>
+    <p>ZZ ORDERNUMBER does not equal RETURN_ITEM.ORDER_SERIAL_NUMBER as-is. Key format mismatch — repair queries below.</p></div>
+  <div class="card pass"><div class="pq">P14 · refund signal</div><div class="stat">event 0097</div>
+    <p>1,244,064 events, 100% on credited items — the credit/refund event candidate. Decode pending via RETURN_EVENT_CODE.</p></div>
+</div>
+
+<!-- ================= ER DIAGRAM ================= -->
+<h2>Entity-relationship model — with measured cardinalities</h2>
+<p class="h2-sub">Every edge is annotated with evidence from the uploads, not assumed. The red dashed edge is the one join that failed as written.</p>
+
+<div class="er-panel">
+<svg viewBox="0 0 1100 720" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="ER diagram of returns entities with measured cardinalities">
+  <defs>
+    <marker id="crow" markerWidth="14" markerHeight="14" refX="12" refY="7" orient="auto">
+      <path d="M12,7 L2,1 M12,7 L2,7 M12,7 L2,13" stroke="#5C6B78" stroke-width="1.4" fill="none"/>
+    </marker>
+    <marker id="one" markerWidth="10" markerHeight="14" refX="4" refY="7" orient="auto">
+      <path d="M4,1 L4,13" stroke="#5C6B78" stroke-width="1.6"/>
+    </marker>
+    <marker id="crowfail" markerWidth="14" markerHeight="14" refX="12" refY="7" orient="auto">
+      <path d="M12,7 L2,1 M12,7 L2,7 M12,7 L2,13" stroke="#C0392B" stroke-width="1.4" fill="none"/>
+    </marker>
+  </defs>
+
+  <!-- ===== entity: ZZ_RETURN_REQUESTED ===== -->
+  <g>
+    <rect x="30" y="40" width="290" height="190" rx="8" fill="#EBF2FA" stroke="#2A6FB8" stroke-width="1.6"/>
+    <rect x="30" y="40" width="290" height="34" rx="8" fill="#2A6FB8"/>
+    <text x="44" y="62" font-family="IBM Plex Mono" font-size="13" font-weight="500" fill="#fff">PRODVM.ZZ_RETURN_REQUESTED</text>
+    <text x="44" y="94" font-size="12" fill="#17222C" font-family="IBM Plex Mono">PK RETURNID + ORDERNUMBER</text>
+    <text x="44" y="110" font-size="12" fill="#17222C" font-family="IBM Plex Mono">     + ORDERLINEITEMNUMBER</text>
+    <text x="44" y="130" font-size="12" fill="#17222C" font-family="IBM Plex Mono">SKU · RETURNREASON (line-level)</text>
+    <text x="44" y="146" font-size="12" fill="#17222C" font-family="IBM Plex Mono">DATETIMEREQUESTED  ← state ①</text>
+    <text x="44" y="162" font-size="12" fill="#17222C" font-family="IBM Plex Mono">TRACKINGID (1 per return, 5.7% null)</text>
+    <text x="44" y="178" font-size="12" fill="#17222C" font-family="IBM Plex Mono">RETURNCOST · WAREHOUSEREFERENCE</text>
+    <text x="44" y="194" font-size="12" fill="#17222C" font-family="IBM Plex Mono">INSERTED_ON / UPDATED_ON (CDC)</text>
+    <text x="44" y="218" font-size="11.5" fill="#5C6B78">grain: request line · 1,192,901 rows / 560,912 returns</text>
+  </g>
+
+  <!-- ===== entity: RETURN (logical header) ===== -->
+  <g>
+    <rect x="430" y="60" width="240" height="150" rx="8" fill="#F7F9FB" stroke="#17222C" stroke-width="1.6" stroke-dasharray="5 3"/>
+    <rect x="430" y="60" width="240" height="34" rx="8" fill="#17222C"/>
+    <text x="444" y="82" font-family="IBM Plex Mono" font-size="13" font-weight="500" fill="#fff">RETURN (logical header)</text>
+    <text x="444" y="114" font-size="12" font-family="IBM Plex Mono" fill="#17222C">PK RETURNID</text>
+    <text x="444" y="132" font-size="12" font-family="IBM Plex Mono" fill="#17222C">AK TRACKINGID (when present)</text>
+    <text x="444" y="152" font-size="12" font-family="IBM Plex Mono" fill="#17222C">state machine ① → ⑤ lives here</text>
+    <text x="444" y="176" font-size="11.5" fill="#5C6B78">derived in L1 — no physical table;</text>
+    <text x="444" y="192" font-size="11.5" fill="#5C6B78">return = parcel (P5: ≤1 tracking each)</text>
+  </g>
+
+  <!-- ===== entity: ZZ_RETURN_IN_TRANSIT ===== -->
+  <g>
+    <rect x="780" y="40" width="290" height="160" rx="8" fill="#EAF5EF" stroke="#1F8A5B" stroke-width="1.6"/>
+    <rect x="780" y="40" width="290" height="34" rx="8" fill="#1F8A5B"/>
+    <text x="794" y="62" font-family="IBM Plex Mono" font-size="13" font-weight="500" fill="#fff">PRODVM.ZZ_RETURN_IN_TRANSIT</text>
+    <text x="794" y="94" font-size="12" font-family="IBM Plex Mono" fill="#17222C">RETURNID · TRACKINGID</text>
+    <text x="794" y="112" font-size="12" font-family="IBM Plex Mono" fill="#17222C">DATETIMEINTRANSIT</text>
+    <text x="794" y="130" font-size="12" font-family="IBM Plex Mono" fill="#17222C">LASTTRACKINGSTATUS</text>
+    <text x="794" y="154" font-size="11.5" fill="#5C6B78">milestone log: row1 = scan-in ②,</text>
+    <text x="794" y="170" font-size="11.5" fill="#5C6B78">row2 = delivered ③ · max 3 rows</text>
+    <text x="794" y="186" font-size="11.5" fill="#5C6B78">984,213 rows / 527,986 returns</text>
+  </g>
+
+  <!-- ===== entity: HERMES tracking ===== -->
+  <g>
+    <rect x="780" y="250" width="290" height="140" rx="8" fill="#EAF5EF" stroke="#1F8A5B" stroke-width="1.6"/>
+    <rect x="780" y="250" width="290" height="34" rx="8" fill="#1F8A5B"/>
+    <text x="794" y="272" font-family="IBM Plex Mono" font-size="12.5" font-weight="500" fill="#fff">PRODVM.HERMES_RETURN_TRACKING_DETAIL</text>
+    <text x="794" y="304" font-size="12" font-family="IBM Plex Mono" fill="#17222C">HERMES_BARCODE = TRACKINGID</text>
+    <text x="794" y="322" font-size="12" font-family="IBM Plex Mono" fill="#17222C">JDW_EVENT_CODE · event ts</text>
+    <text x="794" y="344" font-size="11.5" fill="#5C6B78">full EVRI step history (~6.4 ev/parcel)</text>
+    <text x="794" y="360" font-size="11.5" fill="#5C6B78">P394 = RETURNED TO WAREHOUSE ④</text>
+    <text x="794" y="376" font-size="11.5" fill="#5C6B78">decode via DESPATCH_EVENT_CODE</text>
+  </g>
+
+  <!-- ===== entity: orderline_current ===== -->
+  <g>
+    <rect x="30" y="330" width="290" height="150" rx="8" fill="#FAF3E2" stroke="#C99012" stroke-width="1.6"/>
+    <rect x="30" y="330" width="290" height="34" rx="8" fill="#C99012"/>
+    <text x="44" y="352" font-family="IBM Plex Mono" font-size="12.5" font-weight="500" fill="#fff">PRODUCTION_ORDERLINE.orderline_current</text>
+    <text x="44" y="384" font-size="12" font-family="IBM Plex Mono" fill="#17222C">PK ACCOUNT + TRADING_CODE</text>
+    <text x="44" y="400" font-size="12" font-family="IBM Plex Mono" fill="#17222C">   + ORDER_SERIAL_NUMBER</text>
+    <text x="44" y="416" font-size="12" font-family="IBM Plex Mono" fill="#17222C">   + ORDERLINE_NUMBER</text>
+    <text x="44" y="436" font-size="12" font-family="IBM Plex Mono" fill="#17222C">orderline_quantity · value · product</text>
+    <text x="44" y="460" font-size="11.5" fill="#5C6B78">demand base — Return Rate denominator</text>
+  </g>
+
+  <!-- ===== entity: RETURN_ITEM + EVENT_HISTORY (WMS) ===== -->
+  <g>
+    <rect x="430" y="470" width="320" height="210" rx="8" fill="#F0ECFA" stroke="#6B4FB3" stroke-width="1.6"/>
+    <rect x="430" y="470" width="320" height="34" rx="8" fill="#6B4FB3"/>
+    <text x="444" y="492" font-family="IBM Plex Mono" font-size="12.5" font-weight="500" fill="#fff">PRODVM.RETURN_ITEM (+_EVENT_HISTORY)</text>
+    <text x="444" y="524" font-size="12" font-family="IBM Plex Mono" fill="#17222C">RETURN_NUMBER · ACCOUNT + TRADING</text>
+    <text x="444" y="540" font-size="12" font-family="IBM Plex Mono" fill="#17222C">ORDER_SERIAL_NUMBER + ORDERLINE_NUMBER</text>
+    <text x="444" y="560" font-size="12" font-family="IBM Plex Mono" fill="#17222C">RETURN_DATE/TIME  ← state ④</text>
+    <text x="444" y="578" font-size="12" font-family="IBM Plex Mono" fill="#17222C">CUSTOMER_CREDITED_IND ← state ⑤</text>
+    <text x="444" y="596" font-size="12" font-family="IBM Plex Mono" fill="#17222C">POSTAGE_REFUND_VALUE · status codes</text>
+    <text x="444" y="614" font-size="12" font-family="IBM Plex Mono" fill="#17222C">EVENT_CODE: 0097 = credit (1.24M, 100%)</text>
+    <text x="444" y="638" font-size="11.5" fill="#5C6B78">WMS item record + full WH event stream;</text>
+    <text x="444" y="654" font-size="11.5" fill="#5C6B78">refund answerability: issued · when · value</text>
+  </g>
+
+  <!-- ===== edges ===== -->
+  <!-- request lines -> return header -->
+  <line x1="320" y1="135" x2="430" y2="135" stroke="#5C6B78" stroke-width="1.6" marker-start="url(#crow)" marker-end="url(#one)"/>
+  <text x="338" y="124" font-size="11.5" fill="#5C6B78" font-family="IBM Plex Mono">M : 1 · avg 2.13 lines</text>
+
+  <!-- return header -> in transit -->
+  <line x1="670" y1="120" x2="780" y2="120" stroke="#5C6B78" stroke-width="1.6" marker-start="url(#one)" marker-end="url(#crow)"/>
+  <text x="676" y="108" font-size="11.5" fill="#5C6B78" font-family="IBM Plex Mono">1 : ≤3 · 90.7% covered, 0 key clashes</text>
+
+  <!-- return header -> hermes -->
+  <path d="M 670 185 C 730 210, 740 290, 780 305" stroke="#5C6B78" stroke-width="1.6" fill="none" marker-start="url(#one)" marker-end="url(#crow)"/>
+  <text x="676" y="240" font-size="11.5" fill="#5C6B78" font-family="IBM Plex Mono">1 : ~6.4 events via TRACKINGID</text>
+
+  <!-- orderline -> request lines -->
+  <line x1="175" y1="330" x2="175" y2="230" stroke="#5C6B78" stroke-width="1.6" marker-start="url(#one)" marker-end="url(#crow)"/>
+  <text x="186" y="282" font-size="11.5" fill="#5C6B78" font-family="IBM Plex Mono">1 : 0..6 · 1.1% of order</text>
+  <text x="186" y="296" font-size="11.5" fill="#5C6B78" font-family="IBM Plex Mono">lines re-requested (P4)</text>
+
+  <!-- orderline -> RETURN_ITEM (healthy candidate path) -->
+  <path d="M 320 440 C 380 450, 390 520, 430 540" stroke="#5C6B78" stroke-width="1.6" fill="none" marker-start="url(#one)" marker-end="url(#crow)"/>
+  <text x="300" y="478" font-size="11.5" fill="#5C6B78" font-family="IBM Plex Mono">same key family:</text>
+  <text x="300" y="492" font-size="11.5" fill="#5C6B78" font-family="IBM Plex Mono">acct+trading+order+line</text>
+
+  <!-- request lines -> RETURN_ITEM : BROKEN -->
+  <path d="M 240 230 C 300 330, 360 430, 430 510" stroke="#C0392B" stroke-width="2" fill="none" stroke-dasharray="7 5" marker-end="url(#crowfail)"/>
+  <rect x="262" y="338" width="178" height="40" rx="5" fill="#FAEDEA" stroke="#C0392B"/>
+  <text x="274" y="355" font-size="11.5" fill="#8E2A1C" font-family="IBM Plex Mono">P13: 0% direct match —</text>
+  <text x="274" y="370" font-size="11.5" fill="#8E2A1C" font-family="IBM Plex Mono">key format mismatch</text>
+
+  <!-- state ribbon -->
+  <g font-family="IBM Plex Mono" font-size="11.5">
+    <rect x="780" y="430" width="290" height="250" rx="8" fill="#F7F9FB" stroke="#C9D2DA"/>
+    <text x="794" y="454" font-size="12.5" font-weight="500" fill="#17222C">STATE SOURCES (measured)</text>
+    <text x="794" y="480" fill="#2A6FB8">① Requested</text>
+    <text x="794" y="495" fill="#5C6B78">  ZZ_RETURN_REQUESTED (100%)</text>
+    <text x="794" y="518" fill="#1F8A5B">② Carrier scan-in</text>
+    <text x="794" y="533" fill="#5C6B78">  transit row1 (82.6% clean signal)</text>
+    <text x="794" y="556" fill="#1F8A5B">③ Delivered to retailer</text>
+    <text x="794" y="571" fill="#5C6B78">  transit row2 DELIVERED (99.3%)</text>
+    <text x="794" y="594" fill="#6B4FB3">④ WH processed</text>
+    <text x="794" y="609" fill="#5C6B78">  RETURN_ITEM / EVRI P394 — bridge fix</text>
+    <text x="794" y="632" fill="#6B4FB3">⑤ Refund issued</text>
+    <text x="794" y="647" fill="#5C6B78">  event 0097 + CREDITED_IND — decode</text>
+    <text x="794" y="670" fill="#5C6B78">  pending; value = POSTAGE_REFUND +</text>
+  </g>
+</svg>
+<div class="legend">
+  <span><i class="sw" style="background:var(--req)"></i>Zig Zag portal (request)</span>
+  <span><i class="sw" style="background:var(--carrier)"></i>Carrier events</span>
+  <span><i class="sw" style="background:var(--wms)"></i>Warehouse / WMS</span>
+  <span><i class="sw" style="background:var(--order)"></i>Order / demand</span>
+  <span><i class="sw" style="background:var(--fail)"></i>Broken join (to repair)</span>
+</div>
+</div>
+
+<!-- ================= WHAT EACH TABLE TRACKS ================= -->
+<h2>What each table tracks in the returns process</h2>
+<p class="h2-sub">The role of every profiled source against the ①–⑤ state machine.</p>
+<table>
+  <tr><th>Table</th><th>Process role</th><th>Grain (measured)</th><th>States covered</th><th>Key evidence</th></tr>
+  <tr>
+    <td><code class="inline">ZZ_RETURN_REQUESTED</code></td>
+    <td>Customer's return intent from the Zig Zag portal: which order lines, why, with the carrier label issued (TRACKINGID) and cost</td>
+    <td>Return request line — (RETURNID, ORDERNUMBER, ORDERLINEITEMNUMBER), unique at 1,192,901 rows</td>
+    <td>① fully; reason taxonomy; bridge key to demand</td>
+    <td>P1–P5: grain exact; reasons line-level; ≤1 tracking per return; 1.1% re-requests</td>
+  </tr>
+  <tr>
+    <td><code class="inline">ZZ_RETURN_IN_TRANSIT</code></td>
+    <td>Carrier journey <em>bookends</em>: scan-in and delivered-to-retailer milestones per parcel — not a step history</td>
+    <td>Milestone row — ≤3 per return; 984,213 rows / 527,986 returns</td>
+    <td>② (row 1) and ③ (row 2)</td>
+    <td>P7/P8: 85% two-row pattern; row2 99.3% DELIVERED; P6: 3,285 dup timestamps to dedupe</td>
+  </tr>
+  <tr>
+    <td><code class="inline">HERMES_RETURN_TRACKING_DETAIL</code></td>
+    <td>Full EVRI step telemetry per barcode — drill-down detail and the explicit warehouse-arrival event</td>
+    <td>Carrier event (~6.4 per parcel, from PBIX copy)</td>
+    <td>②–③ detail; ④ signal (P394)</td>
+    <td>Event vocabulary profiled from embedded data; 150d confirmation pending (Q18)</td>
+  </tr>
+  <tr>
+    <td><code class="inline">RETURN_ITEM</code> + <code class="inline">RETURN_ITEM_EVENT_HISTORY</code></td>
+    <td>Warehouse processing record per returned item, with full WH event stream, credit indicator and postage refund value</td>
+    <td>Returned item / WH event (~7.4M events in 150d)</td>
+    <td>④ fully; ⑤ (credit event 0097)</td>
+    <td>P14: event 0097 = 1,244,064 rows, 100% on credited items</td>
+  </tr>
+  <tr>
+    <td><code class="inline">orderline_current</code></td>
+    <td>Demand base: what was ordered — the denominator of Return Rate and the spine that links portal requests to WMS items</td>
+    <td>Order line (account + trading + order serial + line)</td>
+    <td>Pre-① context</td>
+    <td>P4: 1.1% of returned order lines carry multiple requests — return-rate join must pick one attempt</td>
+  </tr>
+</table>
+
+<!-- ================= L1 RULES ================= -->
+<h2>L1 load rules forced by the evidence</h2>
+<p class="h2-sub">Each amber/red finding becomes an explicit, documented rule — not silent cleansing.</p>
+<table>
+  <tr><th>#</th><th>Finding</th><th>L1 rule</th></tr>
+  <tr><td>R1</td><td>3,285 duplicate (RETURNID, DATETIMEINTRANSIT) milestone rows (P6)</td>
+      <td>Dedupe on (RETURNID, ts), keep DELIVERED-class status over others; log discard count as a DQ metric.</td></tr>
+  <tr><td>R2</td><td>0.6% of returns have a 3rd milestone, always DELIVERED (P7/P8)</td>
+      <td>State ③ = <em>first</em> DELIVERED-class milestone; later DELIVERED rows retained as raw events, not state changes.</td></tr>
+  <tr><td>R3</td><td>13.3% of returns' first milestone is already DELIVERED (P8)</td>
+      <td>When no IN_TRANSIT row exists, state ② is taken from the EVRI first-scan event; if neither, ② is null and the return is excluded from the SLA population (matches mart behaviour).</td></tr>
+  <tr><td>R4</td><td>1.1% of order lines have 2–6 return requests (P4)</td>
+      <td>Introduce <code class="inline">request_attempt_seq</code> per order line; Return Rate counts an order line as returned once (latest completed attempt).</td></tr>
+  <tr><td>R5</td><td>5.7% of returns carry no TRACKINGID (P5)</td>
+      <td>Valid state-① returns; they simply cannot join carrier streams. Surface as "no-label cohort" rather than dropping.</td></tr>
+  <tr><td>R6</td><td>9.3% of requests have no transit rows (P9)</td>
+      <td>These are the Idle population — confirmed consistent with the mart's IdleReturnRequests concept; current-state derivation handles them natively.</td></tr>
+  <tr><td>R7</td><td>CDC lag is batch-shaped: median 1.6d, p95 3.6d, max 3.8d; 0.4% of rows have negative lag, worst −24 days (P11)</td>
+      <td>Incremental load watermarks on <code class="inline">INSERTED_ON</code> with a 7-day reprocessing window (catches late and amended rows via <code class="inline">UPDATED_ON</code>). "Data as of" on every serving surface is defined from MAX(INSERTED_ON), never from calendar yesterday. Negative-lag rows are loaded but tagged as a DQ anomaly cohort.</td></tr>
+</table>
+
+<!-- ================= COLUMN TRIAGE ================= -->
+<h2>Column triage — ZZ_RETURN_REQUESTED</h2>
+<table>
+  <tr><th>Column</th><th>Status</th><th>Evidence / action</th></tr>
+  <tr><td><code class="inline">RETURNCOST</code></td><td><span class="pill pill-live">live</span></td><td>100% filled — enables return-cost analytics never used by the PBIX. Add to L1.</td></tr>
+  <tr><td><code class="inline">WAREHOUSEREFERENCE</code></td><td><span class="pill pill-live">live</span></td><td>99.7% filled — candidate repair key for the ZZ→WMS bridge (P15 below).</td></tr>
+  <tr><td><code class="inline">ORDERSTATUS</code></td><td><span class="pill pill-check">profile next</span></td><td>6 distinct values — possible portal-side state signal (P17 below).</td></tr>
+  <tr><td><code class="inline">RETAILER</code></td><td><span class="pill pill-check">profile next</span></td><td>2 distinct values — brand split; confirm against trading codes.</td></tr>
+  <tr><td><code class="inline">INSERTED_ON / UPDATED_ON</code></td><td><span class="pill pill-live">live</span></td><td>CDC watermark confirmed (P11): batch loads ~daily, median lag 1.6 days, p95 3.6 days. Drives rule R7.</td></tr>
+  <tr><td><code class="inline">RETURNOPTION</code></td><td><span class="pill pill-dead">dead</span></td><td>Constant '1' (P10). Return method must come from CARRIER/CARRIERSERVICE instead.</td></tr>
+  <tr><td><code class="inline">NOTES / NOTESCONTENT</code></td><td><span class="pill pill-dead">dead</span></td><td>0% filled — no CS-channel signal here (P12).</td></tr>
+  <tr><td><code class="inline">VOUCHERVALUE / EXTERNALREFERENCE</code></td><td><span class="pill pill-dead">dead</span></td><td>0% filled.</td></tr>
+</table>
+
+<!-- ================= NEXT QUERIES ================= -->
+<h2>Open items → next query batch (P15–P17)</h2>
+<div class="note bad"><strong>P13 blocker — bridge repair.</strong> ZZ <code class="inline">ORDERNUMBER</code> ≠ WMS <code class="inline">ORDER_SERIAL_NUMBER</code> as written. Diagnose formats first, then test candidate transformations:</div>
+<pre>/* P15a · what do the two keys actually look like? */
+SEL TOP 20 ORDERNUMBER, ORDERLINEITEMNUMBER, WAREHOUSEREFERENCE
+FROM PRODVM.ZZ_RETURN_REQUESTED WHERE DATETIMEREQUESTED GE DATE - 7;
+
+SEL TOP 20 ORDER_SERIAL_NUMBER, ORDERLINE_NUMBER, RETURN_NUMBER, ACCOUNT_NUMBER, TRADING_CODE
+FROM PRODVM.RETURN_ITEM WHERE RETURN_DATE GE DATE - 7;
+
+/* P15b · candidate: WAREHOUSEREFERENCE as the bridge key */
+SEL COUNT(*) AS zz_lines,
+    SUM(CASE WHEN ri.RETURN_NUMBER IS NOT NULL THEN 1 ELSE 0 END) AS matched_via_whref
+FROM PRODVM.ZZ_RETURN_REQUESTED r
+LEFT JOIN PRODVM.RETURN_ITEM ri
+       ON TRIM(r.WAREHOUSEREFERENCE) = TRIM(CAST(ri.RETURN_NUMBER AS VARCHAR(20)))
+WHERE r.DATETIMEREQUESTED GE DATE - 150;</pre>
+<pre>/* P16 · decode the WH event vocabulary (incl. 0097) */
+SEL e.DESPATCH_EVENT_CODE, e.DESPATCH_EVENT_DESC, e.DESPATCH_EVENT_GROUP_CODE
+FROM PRODVM.RETURN_EVENT_CODE e;
+
+/* P17 · ORDERSTATUS values — portal-side state signal? */
+SEL ORDERSTATUS, COUNT(*) AS lines_, COUNT(DISTINCT RETURNID) AS returns_
+FROM PRODVM.ZZ_RETURN_REQUESTED
+WHERE DATETIMEREQUESTED GE DATE - 150
+GROUP BY 1 ORDER BY 2 DESC;</pre>
+
+<div class="note"><strong>P11 verdict — freshness ceiling for the platform (D5).</strong> The lag between a customer raising a request and the row landing in <code class="inline">PRODVM.ZZ_RETURN_REQUESTED</code> is batch-shaped: <strong>25.7%</strong> arrive within a day, <strong>72%</strong> within two, p95 = 3.6 days, hard ceiling 3.8 days. Six recurring fractional-second signatures account for 99.6% of rows — roughly one bulk load per day. Consequence: the v1 daily-batch design is compatible with this source, but its honest freshness promise is <em>"requested up to ~2 days ago, complete to ~4 days ago"</em> — not "yesterday". The near-real-time target state cannot be met from the PRODVM path at all; it requires the PRODVMUPD intraday route (or an upstream feed) and should be scoped as such in Phase 3. The 188 negative-lag rows (insert timestamp before request timestamp, worst −24 days) suggest either amended request timestamps on re-requests or clock/timezone drift — worth a 5-minute eyeball of a few RETURNIDs, but too small to affect the design.</div>
+
+<div class="note good"><strong>Where this leaves the semantic layer:</strong> states ①–③ are fully reconstructable today from ZZ sources with measured quality; state ④ and the entire D6 refund spec (issued · when · value) are present in the WMS tables and gated only on the P15 bridge repair and P16 decode. Once those two land, the L1 state-event model covers the complete flow — request to refund — without <code class="inline">warehousedb</code> access.</div>
+
+</div>
+</body>
+</html>

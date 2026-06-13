@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Returns Reporting — Data Flow Lineage</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#EDF0F3;
+    --panel:#FFFFFF;
+    --ink:#17222C;
+    --muted:#5C6B78;
+    --line:#C9D2DA;
+    --td-orange:#E8632A;   /* Teradata source layer */
+    --sql-blue:#2A6FB8;    /* SQL extraction layer */
+    --pq-green:#1F8A5B;    /* Power Query (M) layer */
+    --model-violet:#6B4FB3;/* model & relationships */
+    --dax-amber:#C99012;   /* DAX layer */
+    --code-bg:#10181F;
+    --code-ink:#D9E2EA;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{transition:none!important;animation:none!important}}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'IBM Plex Sans',system-ui,sans-serif;
+    font-size:15px;line-height:1.55;
+    padding-bottom:80px;
+  }
+  .wrap{max-width:1180px;margin:0 auto;padding:0 28px}
+
+  /* ---------- header ---------- */
+  header{
+    border-bottom:1px solid var(--line);
+    background:var(--panel);
+    padding:42px 0 30px;
+  }
+  .eyebrow{
+    font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--muted);margin-bottom:10px;
+  }
+  h1{
+    font-family:'Space Grotesk',sans-serif;font-weight:700;
+    font-size:clamp(26px,4vw,40px);line-height:1.12;letter-spacing:-.01em;
+  }
+  .server-badge{
+    display:inline-flex;align-items:center;gap:8px;margin-top:16px;
+    font-family:'IBM Plex Mono',monospace;font-size:13px;
+    background:#FBEFE8;color:#9C3D12;border:1px solid #ECC4AD;
+    padding:5px 12px;border-radius:4px;
+  }
+  .server-badge .dot{width:8px;height:8px;border-radius:50%;background:var(--td-orange)}
+
+  /* ---------- legend ---------- */
+  .legend{display:flex;flex-wrap:wrap;gap:18px;margin-top:22px}
+  .legend span{display:inline-flex;align-items:center;gap:7px;font-size:13px;color:var(--muted)}
+  .swatch{width:14px;height:14px;border-radius:3px;display:inline-block}
+
+  /* ---------- tabs ---------- */
+  .tabs{display:flex;gap:4px;margin:34px 0 0;border-bottom:2px solid var(--line)}
+  .tab-btn{
+    font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:500;
+    background:none;border:none;cursor:pointer;color:var(--muted);
+    padding:12px 22px;border-bottom:3px solid transparent;margin-bottom:-2px;
+    transition:color .15s,border-color .15s;
+  }
+  .tab-btn:hover{color:var(--ink)}
+  .tab-btn:focus-visible{outline:2px solid var(--sql-blue);outline-offset:2px}
+  .tab-btn[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--ink)}
+  .report{display:none;padding-top:36px}
+  .report.active{display:block}
+
+  /* ---------- stage band ---------- */
+  .stage-band{
+    display:grid;grid-template-columns:repeat(5,1fr);gap:0;
+    margin-bottom:8px;
+  }
+  .stage-band div{
+    font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.12em;
+    text-transform:uppercase;padding:8px 10px;color:#fff;text-align:center;
+  }
+  .st-1{background:var(--td-orange)} .st-2{background:var(--sql-blue)}
+  .st-3{background:var(--pq-green)} .st-4{background:var(--model-violet)}
+  .st-5{background:var(--dax-amber)}
+
+  /* ---------- flow rows ---------- */
+  .flow{background:var(--panel);border:1px solid var(--line);border-top:none}
+  .flow-row{
+    display:grid;grid-template-columns:repeat(5,1fr);
+    border-bottom:1px solid var(--line);
+  }
+  .flow-row:last-child{border-bottom:none}
+  .cell{
+    padding:16px 14px;border-right:1px dashed var(--line);position:relative;
+    min-height:88px;
+  }
+  .cell:last-child{border-right:none}
+  .cell .arrow{
+    position:absolute;right:-9px;top:50%;transform:translateY(-50%);
+    width:18px;height:18px;background:var(--panel);border:1px solid var(--line);
+    border-left:none;border-bottom:none;transform:translateY(-50%) rotate(45deg);
+    z-index:2;
+  }
+  .node{
+    border-radius:6px;padding:9px 11px;font-size:13px;line-height:1.4;
+    border:1px solid;margin-bottom:8px;
+  }
+  .node:last-child{margin-bottom:0}
+  .node b{display:block;font-family:'IBM Plex Mono',monospace;font-size:12.5px;font-weight:500}
+  .node small{color:var(--muted);font-size:11.5px}
+  .n-src{background:#FBF0E9;border-color:#EBC8B2}
+  .n-src b{color:#9C3D12}
+  .n-sql{background:#EBF2FA;border-color:#BFD5EC}
+  .n-sql b{color:#1D589A}
+  .n-pq{background:#EAF5EF;border-color:#BCDECB}
+  .n-pq b{color:#176A45}
+  .n-model{background:#F0ECFA;border-color:#D2C7EC}
+  .n-model b{color:#54399A}
+  .n-dax{background:#FAF3E2;border-color:#E8D7AC}
+  .n-dax b{color:#8F6608}
+  .pass{color:var(--muted);font-size:12.5px;font-style:italic;padding-top:6px;display:block}
+
+  /* ---------- detail sections ---------- */
+  h2{
+    font-family:'Space Grotesk',sans-serif;font-size:22px;font-weight:700;
+    margin:46px 0 6px;letter-spacing:-.01em;
+  }
+  .h2-sub{color:var(--muted);font-size:14px;margin-bottom:18px}
+  details{
+    background:var(--panel);border:1px solid var(--line);border-radius:6px;
+    margin-bottom:10px;overflow:hidden;
+  }
+  details[open]{box-shadow:0 2px 10px rgba(23,34,44,.07)}
+  summary{
+    cursor:pointer;list-style:none;display:flex;align-items:center;gap:12px;
+    padding:13px 16px;font-weight:600;font-size:14px;user-select:none;
+  }
+  summary:focus-visible{outline:2px solid var(--sql-blue);outline-offset:-2px}
+  summary::-webkit-details-marker{display:none}
+  summary .chev{
+    flex:none;width:9px;height:9px;border-right:2px solid var(--muted);
+    border-bottom:2px solid var(--muted);transform:rotate(-45deg);
+    transition:transform .15s;margin-left:auto;
+  }
+  details[open] summary .chev{transform:rotate(45deg)}
+  .tag{
+    flex:none;font-family:'IBM Plex Mono',monospace;font-size:10.5px;
+    letter-spacing:.1em;text-transform:uppercase;color:#fff;
+    padding:3px 8px;border-radius:3px;
+  }
+  .tag.src{background:var(--td-orange)} .tag.sql{background:var(--sql-blue)}
+  .tag.pq{background:var(--pq-green)} .tag.model{background:var(--model-violet)}
+  .tag.dax{background:var(--dax-amber)}
+  .det-body{padding:0 16px 16px;font-size:14px}
+  .det-body p{margin:8px 0;color:var(--ink)}
+  .det-body ul{margin:8px 0 8px 20px}
+  .det-body li{margin:3px 0}
+  pre{
+    background:var(--code-bg);color:var(--code-ink);
+    font-family:'IBM Plex Mono',monospace;font-size:12.5px;line-height:1.5;
+    border-radius:6px;padding:14px 16px;overflow-x:auto;margin:10px 0;
+    tab-size:4;
+  }
+  code.inline{
+    font-family:'IBM Plex Mono',monospace;font-size:.92em;
+    background:#E4E9EE;border-radius:3px;padding:1px 5px;
+  }
+  table{border-collapse:collapse;width:100%;margin:10px 0;font-size:13.5px}
+  th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+  th{background:#F2F5F8;font-family:'IBM Plex Mono',monospace;font-size:11.5px;
+     letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  .note{
+    border-left:3px solid var(--dax-amber);background:#FAF6EA;
+    padding:10px 14px;font-size:13.5px;margin:12px 0;border-radius:0 4px 4px 0;
+  }
+
+  /* ---------- source object catalogue ---------- */
+  .catalogue{
+    background:var(--panel);border:1px solid var(--line);border-radius:8px;
+    margin:36px 0 8px;padding:24px 26px 20px;
+  }
+  .catalogue h2{margin:0 0 6px}
+  .catalogue .h2-sub{margin-bottom:14px}
+  .priority-strip{
+    display:flex;flex-wrap:wrap;gap:10px;margin:14px 0 18px;
+  }
+  .priority-strip .pr{
+    display:flex;align-items:center;gap:9px;
+    border:1px solid var(--line);border-radius:6px;padding:9px 13px;
+    font-size:13px;background:#F7F9FB;
+  }
+  .priority-strip .pr b{
+    font-family:'Space Grotesk',sans-serif;font-size:17px;color:var(--muted);
+    font-weight:700;
+  }
+  .priority-strip .pr-arrow{align-self:center;color:var(--muted);font-size:16px}
+  .pill{
+    display:inline-block;font-family:'IBM Plex Mono',monospace;font-size:10px;
+    letter-spacing:.08em;text-transform:uppercase;padding:2px 8px;
+    border-radius:10px;white-space:nowrap;
+  }
+  .pill-pbix{background:#EAF5EF;color:#176A45;border:1px solid #BCDECB}
+  .pill-resolved{background:#EBF2FA;color:#1D589A;border:1px solid #BFD5EC}
+  .pill-candidate{background:#FAF3E2;color:#8F6608;border:1px solid #E8D7AC}
+  .pill-unresolved{background:#FBEFE8;color:#9C3D12;border:1px solid #ECC4AD}
+  .catalogue td code.inline{white-space:nowrap}
+  .catalogue .ignored{color:var(--muted);font-size:12.5px}
+
+  @media(max-width:860px){
+    .stage-band{display:none}
+    .flow-row{grid-template-columns:1fr}
+    .cell{border-right:none;border-bottom:1px dashed var(--line)}
+    .cell:last-child{border-bottom:none}
+    .cell .arrow{display:none}
+    .cell::before{
+      content:attr(data-stage);
+      font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.12em;
+      text-transform:uppercase;color:var(--muted);display:block;margin-bottom:6px;
+    }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="eyebrow">Data flow lineage &nbsp;·&nbsp; extracted from PBIX data models</div>
+    <h1>Returns Reporting: Source → Transformation → Conversion</h1>
+    <div class="server-badge"><span class="dot"></span>Teradata.Database("teradata2690") · native query · import mode</div>
+    <div class="legend">
+      <span><i class="swatch" style="background:var(--td-orange)"></i>Teradata source</span>
+      <span><i class="swatch" style="background:var(--sql-blue)"></i>SQL extraction</span>
+      <span><i class="swatch" style="background:var(--pq-green)"></i>Power Query (M)</span>
+      <span><i class="swatch" style="background:var(--model-violet)"></i>Model &amp; relationships</span>
+      <span><i class="swatch" style="background:var(--dax-amber)"></i>DAX conversions</span>
+    </div>
+
+    <div class="tabs" role="tablist">
+      <button class="tab-btn" role="tab" id="tab-zz" aria-selected="true" aria-controls="rep-zz">Zig Zag Returns</button>
+      <button class="tab-btn" role="tab" id="tab-rr" aria-selected="false" aria-controls="rep-rr">Return Reasons</button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+<!-- ============================================================= -->
+<!-- SOURCE OBJECT RESOLUTION (applies to both reports)            -->
+<!-- ============================================================= -->
+<section class="catalogue" aria-label="Source object resolution">
+  <h2>Source object resolution — confirmed mapping</h2>
+  <p class="h2-sub">Where the PBIX names resolve in Teradata, verified against <code class="inline">DBC.TablesV</code> discovery. Dev/test copies (DEVT*, UK1_*, PRODTEMPDB, sampledb, suppdb) excluded.</p>
+
+  <div class="priority-strip">
+    <div class="pr"><b>1</b><span><strong>Name written in the PBIX query</strong> — first priority. Where the query qualifies the database (<code class="inline">warehousedb.…</code>, <code class="inline">prodvm.…</code>), that is the object used at refresh. Unqualified names also take the PBIX spelling as-is.</span></div>
+    <div class="pr-arrow">→</div>
+    <div class="pr"><b>2</b><span><strong>PRODVM view layer</strong> — unqualified names resolve through the refresh account's default database; discovery shows matching views in <code class="inline">PRODVM</code>, consistent with the PBIX's own <code class="inline">prodvm.calendar_mart</code> reference.</span></div>
+    <div class="pr-arrow">→</div>
+    <div class="pr"><b>3</b><span><strong>Production base table</strong> — underlying table of the view; not what the PBIX queries, but the reliable place to read column data types (dictionary returns NULL types for views).</span></div>
+  </div>
+
+  <table>
+    <tr>
+      <th>PBIX query reference (verbatim)</th>
+      <th>Status</th>
+      <th>Resolved object (used by PBIX)</th>
+      <th>Underlying base table (types)</th>
+      <th>Other copies found (not used)</th>
+    </tr>
+    <tr>
+      <td><code class="inline">warehousedb.MB_ZZ_parcels</code></td>
+      <td><span class="pill pill-pbix">PBIX-qualified</span></td>
+      <td><code class="inline">WAREHOUSEDB.MB_ZZ_parcels</code> (T)</td>
+      <td>— (is a table)</td>
+      <td class="ignored">—</td>
+    </tr>
+    <tr>
+      <td><code class="inline">zz_return_in_transit</code></td>
+      <td><span class="pill pill-resolved">Resolved · PRODVM</span></td>
+      <td><code class="inline">PRODVM.ZZ_RETURN_IN_TRANSIT</code> (V)</td>
+      <td><code class="inline">Production.ZZ_RETURN_IN_TRANSIT</code> (T)</td>
+      <td class="ignored">PRODVMUPD (V)</td>
+    </tr>
+    <tr>
+      <td><code class="inline">HERMES_RETURN_TRACKING_DETAIL</code></td>
+      <td><span class="pill pill-resolved">Resolved · PRODVM</span></td>
+      <td><code class="inline">PRODVM.HERMES_RETURN_TRACKING_DETAIL</code> (V)</td>
+      <td><code class="inline">Production_Daily_Updated_01.HERMES_RETURN_TRACKING_DETAIL</code> (T)</td>
+      <td class="ignored">PRODVMUPD (V)</td>
+    </tr>
+    <tr>
+      <td><code class="inline">despatch_event_code</code></td>
+      <td><span class="pill pill-unresolved">Unresolved in prod</span></td>
+      <td>No production copy visible in DBC discovery</td>
+      <td>—</td>
+      <td class="ignored">DEVTTESTDB (T), DEVTVMUPD (V) only</td>
+    </tr>
+    <tr>
+      <td><code class="inline">prodvm.calendar_mart</code></td>
+      <td><span class="pill pill-pbix">PBIX-qualified</span></td>
+      <td><code class="inline">PRODVM.calendar_mart</code> (V)</td>
+      <td>Not visible in DBC discovery (use <code class="inline">HELP TABLE</code>)</td>
+      <td class="ignored">DEVTVMUPD (V)</td>
+    </tr>
+    <tr>
+      <td><code class="inline">zz_return_requested</code></td>
+      <td><span class="pill pill-resolved">Resolved · PRODVM</span></td>
+      <td><code class="inline">PRODVM.ZZ_RETURN_REQUESTED</code> (V)</td>
+      <td><code class="inline">Production.ZZ_RETURN_REQUESTED</code> (T)</td>
+      <td class="ignored">PRODVMUPD (V), PRODTEMPDB staging</td>
+    </tr>
+    <tr>
+      <td><code class="inline">warehousedb.zz_return_requested_clean</code></td>
+      <td><span class="pill pill-pbix">PBIX-qualified</span></td>
+      <td><code class="inline">WAREHOUSEDB.zz_return_requested_clean</code> (V)</td>
+      <td>No base table visible in discovery</td>
+      <td class="ignored">—</td>
+    </tr>
+    <tr>
+      <td><code class="inline">orderline_current</code></td>
+      <td><span class="pill pill-candidate">Production candidate</span></td>
+      <td><code class="inline">PRODUCTION_ORDERLINE.orderline_current</code> (T)</td>
+      <td>— (is a table)</td>
+      <td class="ignored">RIVER_ISLAND (V), F4F_MVP_Development, ZENDOR_PRODUCTION_ORDERLINE (T)</td>
+    </tr>
+    <tr>
+      <td><code class="inline">product_summary</code></td>
+      <td><span class="pill pill-candidate">Production candidate</span></td>
+      <td><code class="inline">PRODUCTION_REFRESH.product_summary</code> (T)</td>
+      <td>— (is a table)</td>
+      <td class="ignored">DEVTTESTDB (T)</td>
+    </tr>
+    <tr>
+      <td><code class="inline">product_Status_code</code></td>
+      <td><span class="pill pill-candidate">Production candidate</span></td>
+      <td><code class="inline">Production_Reference.product_status_code</code> (T)</td>
+      <td>— (is a table)</td>
+      <td class="ignored">DEVTTESTDB (T)</td>
+    </tr>
+    <tr>
+      <td><code class="inline">product_option</code></td>
+      <td><span class="pill pill-candidate">Production candidate</span></td>
+      <td><code class="inline">zendor_daily_updated_02.product_option</code> (T)</td>
+      <td>— (is a table)</td>
+      <td class="ignored">DEVTVMUPD (V)</td>
+    </tr>
+    <tr>
+      <td><code class="inline">supplier_new</code></td>
+      <td><span class="pill pill-resolved">Resolved · PRODVM</span></td>
+      <td><code class="inline">PRODVM.SUPPLIER_NEW</code> (V)</td>
+      <td><code class="inline">PRODUCTION_DAILY_UPDATED_02.SUPPLIER_NEW</code> (T)</td>
+      <td class="ignored">PRODVMUPD (V), PROD_AUDIT (V), dated archives (_261119, _DEC22, _20121229)</td>
+    </tr>
+  </table>
+
+  <div class="note">
+    <strong>How to read the Status column:</strong>
+    <em>PBIX-qualified</em> — the database is written in the PBIX query itself; authoritative.
+    <em>Resolved · PRODVM</em> — PBIX uses the bare name; a matching view exists in PRODVM, the same layer the PBIX explicitly uses for <code class="inline">calendar_mart</code>.
+    <em>Production candidate</em> — PBIX uses the bare name and multiple non-dev copies exist; the listed object is the production-named copy from discovery. Confirm against the refresh account's default database before treating as definitive.
+    <em>Unresolved in prod</em> — only dev copies were visible in discovery; the production object may exist under a name/database the discovery account cannot see.
+  </div>
+</section>
+
+<!-- ============================================================= -->
+<!-- ZIG ZAG RETURNS                                               -->
+<!-- ============================================================= -->
+<section class="report active" id="rep-zz" role="tabpanel" aria-labelledby="tab-zz">
+
+  <div class="stage-band" aria-hidden="true">
+    <div class="st-1">1 · Teradata source</div>
+    <div class="st-2">2 · SQL extraction</div>
+    <div class="st-3">3 · Power Query (M)</div>
+    <div class="st-4">4 · Model &amp; relationships</div>
+    <div class="st-5">5 · DAX conversions</div>
+  </div>
+
+  <div class="flow">
+
+    <!-- Returns fact -->
+    <div class="flow-row">
+      <div class="cell" data-stage="1 · Teradata source"><span class="arrow"></span>
+        <div class="node n-src"><b>WAREHOUSEDB.MB_ZZ_parcels</b><small>pre-built parcels mart — SLA flags computed upstream</small></div>
+      </div>
+      <div class="cell" data-stage="2 · SQL extraction"><span class="arrow"></span>
+        <div class="node n-sql"><b>SEL * (full table)</b><small>no row filter · 36 columns · grain = parcel/return</small></div>
+      </div>
+      <div class="cell" data-stage="3 · Power Query"><span class="arrow"></span>
+        <div class="node n-pq"><b>Returns</b><small>cast 8 date cols · order_number→text · rename WIP &amp; CARRIER_SOS</small></div>
+      </div>
+      <div class="cell" data-stage="4 · Model"><span class="arrow"></span>
+        <div class="node n-model"><b>Fact: Returns</b><small>4 date roles → CALENDAR 1–4 · key for both tracking tables</small></div>
+      </div>
+      <div class="cell" data-stage="5 · DAX">
+        <div class="node n-dax"><b>7 ratio measures</b><small>% processed · idle · in transit · WIP · 3× 10-day SLA</small></div>
+        <div class="node n-dax"><b>Target 95% (column)</b><small>constant 0.95 for KPI gauge</small></div>
+      </div>
+    </div>
+
+    <!-- ZZ Tracking -->
+    <div class="flow-row">
+      <div class="cell" data-stage="1 · Teradata source"><span class="arrow"></span>
+        <div class="node n-src"><b>PRODVM.ZZ_RETURN_IN_TRANSIT</b><small>Zig Zag carrier scan events · view over Production.ZZ_RETURN_IN_TRANSIT</small></div>
+      </div>
+      <div class="cell" data-stage="2 · SQL extraction"><span class="arrow"></span>
+        <div class="node n-sql"><b>WHERE datetimeintransit ≥ DATE − 90</b><small>rolling 90-day window</small></div>
+      </div>
+      <div class="cell" data-stage="3 · Power Query"><span class="arrow"></span>
+        <span class="pass">pass-through — no M steps</span>
+      </div>
+      <div class="cell" data-stage="4 · Model"><span class="arrow"></span>
+        <div class="node n-model"><b>ZZ Tracking → Returns</b><small>M:1 on RETURNID · single direction</small></div>
+      </div>
+      <div class="cell" data-stage="5 · DAX">
+        <span class="pass">no DAX — drill-through detail</span>
+      </div>
+    </div>
+
+    <!-- EVRI Tracking -->
+    <div class="flow-row">
+      <div class="cell" data-stage="1 · Teradata source"><span class="arrow"></span>
+        <div class="node n-src"><b>PRODVM.HERMES_RETURN_TRACKING_DETAIL</b><small>EVRI/Hermes scan events · view over Production_Daily_Updated_01</small></div>
+        <div class="node n-src"><b>despatch_event_code</b><small>event code → description lookup · prod copy unresolved in DBC</small></div>
+      </div>
+      <div class="cell" data-stage="2 · SQL extraction"><span class="arrow"></span>
+        <div class="node n-sql"><b>LEFT JOIN on jdw_event_code</b><small>WHERE event date ≥ DATE − 90 · 4 columns out</small></div>
+      </div>
+      <div class="cell" data-stage="3 · Power Query"><span class="arrow"></span>
+        <span class="pass">pass-through — no M steps</span>
+      </div>
+      <div class="cell" data-stage="4 · Model"><span class="arrow"></span>
+        <div class="node n-model"><b>EVRI Tracking → Returns</b><small>M:1 on HERMES_BARCODE = TRACKINGID</small></div>
+      </div>
+      <div class="cell" data-stage="5 · DAX">
+        <span class="pass">no DAX — drill-through detail</span>
+      </div>
+    </div>
+
+    <!-- Calendar -->
+    <div class="flow-row">
+      <div class="cell" data-stage="1 · Teradata source"><span class="arrow"></span>
+        <div class="node n-src"><b>PRODVM.calendar_mart</b><small>enterprise financial calendar (view)</small></div>
+      </div>
+      <div class="cell" data-stage="2 · SQL extraction"><span class="arrow"></span>
+        <div class="node n-sql"><b>Fin-year shaping in SQL</b><small>month names · Q1–Q4 · H1/H2 · Fin_Year_Week · from 2025-11-10 to today</small></div>
+      </div>
+      <div class="cell" data-stage="3 · Power Query"><span class="arrow"></span>
+        <div class="node n-pq"><b>CALENDAR ×4 copies</b><small>+ Day of week SORT · FY HALF/QUARTER/PERIOD · FY PERIOD (sort)</small></div>
+      </div>
+      <div class="cell" data-stage="4 · Model"><span class="arrow"></span>
+        <div class="node n-model"><b>Role-playing dates</b><small>C1 requested · C2 returned WH · C3 carrier start · C4 carrier end</small></div>
+      </div>
+      <div class="cell" data-stage="5 · DAX">
+        <div class="node n-dax"><b>Helper columns</b><small>Date LY (−364d) · TodayMinus14/10 · Cal. Month/Year (C3)</small></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ---------- detail accordions ---------- -->
+  <h2>Stage detail — Zig Zag Returns</h2>
+  <p class="h2-sub">Expand each step for the exact code carried through that stage.</p>
+
+  <details>
+    <summary><span class="tag sql">SQL</span>Returns — full-table extract from MB_ZZ_parcels<span class="chev"></span></summary>
+    <div class="det-body">
+      <pre>SEL * FROM warehousedb.MB_ZZ_parcels;</pre>
+      <p>All transformation for this fact happens <em>upstream</em> in the mart. Columns landed include the pre-computed flags the DAX divides over:</p>
+      <ul>
+        <li><code class="inline">ReturnsRequested</code>, <code class="inline">ParcelsProcessedByWH</code>, <code class="inline">IdleReturnRequests</code>, <code class="inline">ParcelsInTransit</code>, <code class="inline">Parcels_at_WH_WIP</code></li>
+        <li>SLA set: <code class="inline">Returned_in_10_SLA</code>, <code class="inline">Returned_outside_10_SLA</code>, <code class="inline">Not_returned_SLA</code>, <code class="inline">Parcels_for_SLA_measure</code>, <code class="inline">SLA_Status</code></li>
+        <li>Journey dates: <code class="inline">DateReturnRequested</code> → <code class="inline">Start/End_Carrier_Journey</code> → <code class="inline">DateReturnedWH</code>, plus <code class="inline">Matched_item/product/order</code></li>
+        <li>Durations: <code class="inline">EndToEndSOS</code>, <code class="inline">RequestToCarrierSOS</code>, <code class="inline">CARRIER_SOS</code>, <code class="inline">WH_SOS</code>, <code class="inline">Carrier/WH SOS</code></li>
+      </ul>
+    </div>
+  </details>
+
+  <details>
+    <summary><span class="tag pq">M</span>Returns — Power Query steps<span class="chev"></span></summary>
+    <div class="det-body">
+      <pre>let
+    Source = Teradata.Database("teradata2690", [HierarchicalNavigation=true,
+        Query="sel * from warehousedb.MB_ZZ_parcels"]),
+    #"Changed Type" = Table.TransformColumnTypes(Source,{
+        {"order_number", type text}, {"DateReturnRequested", type date},
+        {"Start_Carrier_Journey", type date}, {"End_Carrier_Journey", type date},
+        {"Last_Tracking_Event", type date}, {"Matched_item", type date},
+        {"Matched_product", type date}, {"Matched_order", type date},
+        {"DateReturnedWH", type date}}),
+    #"Renamed Columns" = Table.RenameColumns(#"Changed Type",{
+        {"Parcels_at_WH_WIP", "Parcels at WH - WIP"},
+        {"CARIER_SOS", "CARRIER_SOS"}})
+in
+    #"Renamed Columns"</pre>
+    </div>
+  </details>
+
+  <details>
+    <summary><span class="tag sql">SQL</span>ZZ Tracking &amp; EVRI Tracking — 90-day event extracts<span class="chev"></span></summary>
+    <div class="det-body">
+      <p><strong>ZZ Tracking</strong> (no M steps after load):</p>
+      <pre>SEL * FROM zz_return_in_transit
+WHERE datetimeintransit (DATE) GE DATE - 90;</pre>
+      <p><strong>EVRI Tracking</strong> (no M steps after load):</p>
+      <pre>SEL hermes_barcode,
+    jdw_event_code,
+    despatch_event_desc,
+    date_and_time_of_event
+FROM HERMES_RETURN_TRACKING_DETAIL t1
+LEFT JOIN despatch_event_code t2
+  ON t1.jdw_event_code = t2.despatch_event_code
+WHERE date_and_time_of_event (DATE) GE DATE - 90;</pre>
+    </div>
+  </details>
+
+  <details>
+    <summary><span class="tag sql">SQL</span>CALENDAR — financial calendar shaping (identical for all 4 copies)<span class="chev"></span></summary>
+    <div class="det-body">
+      <pre>SEL calendar_date,
+    CAST(calendar_date AS DATE FORMAT 'e4') (CHAR(3)) AS Weekday,
+    traddly_rel_day_to_now            AS Day_Relevance_to_now,
+    finwkly_date_of_week_end          AS date_of_week_end,
+    finwkly_rel_week_to_now           AS Fin_Week_Relevance_to_now,
+    finwkly_rel_of_period_in_year     AS Fin_Period_Relevance_in_Year,
+    finwkly_rel_half_to_now           AS Fin_Half_Relevance_to_now,
+    finwkly_rel_year_to_now           AS Fin_Year_Relevance_to_now,
+    finwkly_name_of_year              AS FIN_YEAR,
+    finwkly_date_of_year_start        AS Start_of_Fin_year,
+    finwkly_date_of_year_end          AS End_of_Fin_year,
+    finwkly_name_of_half_in_year      AS Season,
+    finwkly_no_of_period_in_year      AS Fin_Period,
+    CASE WHEN Fin_Period = 1  THEN 'MAR' WHEN Fin_Period = 2  THEN 'APR'
+         WHEN Fin_Period = 3  THEN 'MAY' WHEN Fin_Period = 4  THEN 'JUN'
+         WHEN Fin_Period = 5  THEN 'JUL' WHEN Fin_Period = 6  THEN 'AUG'
+         WHEN Fin_Period = 7  THEN 'SEP' WHEN Fin_Period = 8  THEN 'OCT'
+         WHEN Fin_Period = 9  THEN 'NOV' WHEN Fin_Period = 10 THEN 'DEC'
+         WHEN Fin_Period = 11 THEN 'JAN' WHEN Fin_Period = 12 THEN 'FEB'
+         ELSE NULL END AS Fin_Month_Name,
+    CASE WHEN Fin_Period IN (1,2,3)    THEN 'Q1'
+         WHEN Fin_Period IN (4,5,6)    THEN 'Q2'
+         WHEN Fin_Period IN (7,8,9,10) THEN 'Q3'
+         WHEN Fin_Period IN (11,12)    THEN 'Q4' END AS Fin_Quarter,
+    CASE WHEN Fin_Quarter IN ('Q1','Q2') THEN 'H1'
+         WHEN Fin_Quarter IN ('Q3','Q4') THEN 'H2' END AS Fin_Half,
+    finwkly_no_of_week_in_year AS Fin_Week,
+    TRIM(finwkly_name_of_year)||'-'||TRIM(TO_CHAR(finwkly_no_of_week_in_year,'00'))
+        AS Fin_Year_Week
+FROM prodvm.calendar_mart
+WHERE calendar_date LE DATE
+  AND calendar_date (DATE) GE '2025-11-10';</pre>
+      <p>Fin year runs Mar→Feb; Q3 holds 4 periods (Jul–Oct trading split).</p>
+    </div>
+  </details>
+
+  <details>
+    <summary><span class="tag pq">M</span>CALENDAR — Power Query enrichment (all 4 copies)<span class="chev"></span></summary>
+    <div class="det-body">
+      <table>
+        <tr><th>M step</th><th>Output column</th><th>Logic</th></tr>
+        <tr><td>Changed Type</td><td>4 date columns</td><td>cast to <code class="inline">type date</code></td></tr>
+        <tr><td>Added Custom</td><td>Day of week SORT</td><td><code class="inline">Date.DayOfWeek([CALENDAR_DATE], 0)</code> — Sunday = 0</td></tr>
+        <tr><td>Duplicate + Merge</td><td>FY HALF</td><td><code class="inline">FIN_YEAR &amp; "-" &amp; Fin_Half</code></td></tr>
+        <tr><td>Duplicate + Merge</td><td>FY QUARTER</td><td><code class="inline">FIN_YEAR &amp; "-" &amp; Fin_Quarter</code></td></tr>
+        <tr><td>Duplicate + Merge</td><td>FY PERIOD</td><td><code class="inline">FIN_YEAR &amp; "-" &amp; Fin_Period</code></td></tr>
+        <tr><td>Added Custom1</td><td>FY PERIOD (sort)</td><td><code class="inline">FIN_YEAR * 100 + Fin_Period</code> (Int64)</td></tr>
+      </table>
+    </div>
+  </details>
+
+  <details>
+    <summary><span class="tag model">Model</span>Relationships — star with role-playing dates<span class="chev"></span></summary>
+    <div class="det-body">
+      <table>
+        <tr><th>From (many)</th><th>To (one)</th><th>Type</th></tr>
+        <tr><td>Returns[DateReturnRequested]</td><td>CALENDAR[CALENDAR_DATE]</td><td>M:1 · active · single</td></tr>
+        <tr><td>Returns[DateReturnedWH]</td><td>CALENDAR 2[CALENDAR_DATE]</td><td>M:1 · active · single</td></tr>
+        <tr><td>Returns[Start_Carrier_Journey]</td><td>CALENDAR 3[CALENDAR_DATE]</td><td>M:1 · active · single</td></tr>
+        <tr><td>Returns[End_Carrier_Journey]</td><td>CALENDAR 4[CALENDAR_DATE]</td><td>M:1 · active · single</td></tr>
+        <tr><td>ZZ Tracking[RETURNID]</td><td>Returns[RETURNID]</td><td>M:1 · active · single</td></tr>
+        <tr><td>EVRI Tracking[HERMES_BARCODE]</td><td>Returns[TRACKINGID]</td><td>M:1 · active · single</td></tr>
+      </table>
+      <p>Returns sits at the centre as both fact (vs calendars) and dimension (vs the two tracking event tables) — a snowflake around the parcel grain.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary><span class="tag dax">DAX</span>Measures — 7 ratios over pre-computed flags<span class="chev"></span></summary>
+    <div class="det-body">
+      <pre>% Parcels ProcessedBy WH =
+DIVIDE ( SUM('Returns'[ParcelsProcessedByWH]), SUM('Returns'[ReturnsRequested]) )
+
+% Idle Return Requests =
+DIVIDE ( SUM('Returns'[IdleReturnRequests]), SUM('Returns'[ReturnsRequested]) )
+
+% Parcels in Transit =
+DIVIDE ( SUM('Returns'[ParcelsInTransit]), SUM('Returns'[ReturnsRequested]) )
+
+% Parcels at WH - WIP =
+DIVIDE ( SUM('Returns'[Parcels at WH - WIP]), SUM('Returns'[ReturnsRequested]) )
+
+% Parcels Returned in 10 Day SLA =
+DIVIDE ( SUM(Returns[Returned_in_10_SLA]), SUM(Returns[Parcels_for_SLA_measure]) )
+
+% Parcels Returned outside 10 Day SLA =
+DIVIDE ( SUM(Returns[Returned_outside_10_SLA]), SUM(Returns[Parcels_for_SLA_measure]) )
+
+% Parcels Not Returned (SLA) =
+DIVIDE ( SUM(Returns[Not_returned_SLA]), SUM(Returns[Parcels_for_SLA_measure]) )</pre>
+    </div>
+  </details>
+
+  <details>
+    <summary><span class="tag dax">DAX</span>Calculated columns — date helpers &amp; KPI target<span class="chev"></span></summary>
+    <div class="det-body">
+      <pre>-- CALENDAR
+Date LY      = DATEADD ( 'CALENDAR'[CALENDAR_DATE], -364, DAY )
+TodayMinus14 = TODAY() - 15      -- ⚠ actually minus 15 on this copy
+TodayMinus10 = TODAY() - 11
+
+-- CALENDAR 2
+TodayMinus14 = TODAY() - 14
+
+-- CALENDAR 3
+TodayMinus10          = TODAY() - 11
+Cal. Month            = FORMAT ( 'CALENDAR 3'[calendar_date], "MMMM" )
+Cal. Year             = YEAR ( 'CALENDAR 3'[calendar_date] )
+Calendar Month Number = MONTH ( 'CALENDAR 3'[calendar_date] )
+
+-- Returns
+Target 95% = 0.95</pre>
+      <div class="note"><strong>Inconsistency carried in the model:</strong> <code class="inline">TodayMinus14</code> is <code class="inline">TODAY()−15</code> on CALENDAR but <code class="inline">TODAY()−14</code> on CALENDAR 2. Any visual filtered by these columns shifts by one day depending on which calendar drives it.</div>
+    </div>
+  </details>
+
+</section>
+
+<!-- ============================================================= -->
+<!-- RETURN REASONS                                                -->
+<!-- ============================================================= -->
+<section class="report" id="rep-rr" role="tabpanel" aria-labelledby="tab-rr">
+
+  <div class="stage-band" aria-hidden="true">
+    <div class="st-1">1 · Teradata source</div>
+    <div class="st-2">2 · SQL extraction</div>
+    <div class="st-3">3 · Power Query (M)</div>
+    <div class="st-4">4 · Model &amp; relationships</div>
+    <div class="st-5">5 · DAX conversions</div>
+  </div>
+
+  <div class="flow">
+
+    <!-- Returns Data -->
+    <div class="flow-row">
+      <div class="cell" data-stage="1 · Teradata source"><span class="arrow"></span>
+        <div class="node n-src"><b>PRODVM.ZZ_RETURN_REQUESTED</b><small>return request lines (fact) · view over Production.ZZ_RETURN_REQUESTED</small></div>
+        <div class="node n-src"><b>PRODUCTION_REFRESH.product_summary · Production_Reference.product_status_code</b><small>product attributes &amp; status · production candidates</small></div>
+        <div class="node n-src"><b>zendor_daily_updated_02.product_option · PRODVM.SUPPLIER_NEW</b><small>option-level supplier link</small></div>
+      </div>
+      <div class="cell" data-stage="2 · SQL extraction"><span class="arrow"></span>
+        <div class="node n-sql"><b>4× LEFT JOIN + SKU parsing</b><small>SKU[1..5]=product · SKU[last 2]=option · CustomerID→account ×10 · ≥ DATE − 90</small></div>
+      </div>
+      <div class="cell" data-stage="3 · Power Query"><span class="arrow"></span>
+        <span class="pass">pass-through — no M steps</span>
+      </div>
+      <div class="cell" data-stage="4 · Model"><span class="arrow"></span>
+        <div class="node n-model"><b>Returns Data → Returns Rate data</b><small>M:1 on Product_Number · single</small></div>
+      </div>
+      <div class="cell" data-stage="5 · DAX">
+        <div class="node n-dax"><b>Reason grouping (SWITCH)</b><small>~30 reasons → 5 groups</small></div>
+        <div class="node n-dax"><b>Reason Rank within Product</b><small>RANKX with alpha tiebreak</small></div>
+        <div class="node n-dax"><b>% split · #1/#2/#3 reason measures</b></div>
+      </div>
+    </div>
+
+    <!-- Returns Rate data -->
+    <div class="flow-row">
+      <div class="cell" data-stage="1 · Teradata source"><span class="arrow"></span>
+        <div class="node n-src"><b>PRODUCTION_ORDERLINE.orderline_current</b><small>demand base (order lines) · production candidate</small></div>
+        <div class="node n-src"><b>WAREHOUSEDB.zz_return_requested_clean</b><small>deduped returns for matching (view)</small></div>
+        <div class="node n-src"><b>product_summary · product_option · SUPPLIER_NEW</b><small>same resolved objects as above</small></div>
+      </div>
+      <div class="cell" data-stage="2 · SQL extraction"><span class="arrow"></span>
+        <div class="node n-sql"><b>GROUP BY product (17 cols)</b><small>items_ordered = Σ qty · items_returned = Σ matched ReturnIDs · status '0' · orders ≥ DATE − 90</small></div>
+      </div>
+      <div class="cell" data-stage="3 · Power Query"><span class="arrow"></span>
+        <div class="node n-pq"><b>Table.Distinct on PRODUCT_NUMBER</b><small>one row per product — arbitrary keep on multi-supplier products</small></div>
+      </div>
+      <div class="cell" data-stage="4 · Model"><span class="arrow"></span>
+        <div class="node n-model"><b>Dimension side of the model</b><small>one row per product · carries image URL</small></div>
+      </div>
+      <div class="cell" data-stage="5 · DAX">
+        <div class="node n-dax"><b>Return Rate</b><small>Σ returned ÷ Σ ordered</small></div>
+        <div class="node n-dax"><b>Product Rank · #1–#3 reason labels</b><small>"Reason (count) — %"</small></div>
+      </div>
+    </div>
+
+    <!-- Calendar -->
+    <div class="flow-row">
+      <div class="cell" data-stage="1 · Teradata source"><span class="arrow"></span>
+        <div class="node n-src"><b>PRODVM.calendar_mart</b><small>enterprise financial calendar (view)</small></div>
+      </div>
+      <div class="cell" data-stage="2 · SQL extraction"><span class="arrow"></span>
+        <div class="node n-sql"><b>Fin-year shaping (variant)</b><small>'(MAR)' month labels · F_Month label · ≤ yesterday · this + last fin year</small></div>
+      </div>
+      <div class="cell" data-stage="3 · Power Query"><span class="arrow"></span>
+        <div class="node n-pq"><b>CALENDAR</b><small>date type casts only</small></div>
+      </div>
+      <div class="cell" data-stage="4 · Model"><span class="arrow"></span>
+        <div class="node n-model"><b>Disconnected</b><small>no physical relationship — slicer/reference table</small></div>
+      </div>
+      <div class="cell" data-stage="5 · DAX">
+        <div class="node n-dax"><b>Date LY</b><small>DATEADD −364 days</small></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ---------- detail accordions ---------- -->
+  <h2>Stage detail — Return Reasons</h2>
+  <p class="h2-sub">Expand each step for the exact code carried through that stage.</p>
+
+  <details>
+    <summary><span class="tag sql">SQL</span>Returns Data — request lines + product/supplier enrichment<span class="chev"></span></summary>
+    <div class="det-body">
+      <pre>SELECT
+    CustomerID AS Customer_ID,
+    CASE WHEN REGEXP_SIMILAR(SUBSTRING(CustomerID FROM 2), '^[0-9]+$') = 1
+         THEN CAST(SUBSTRING(CustomerID FROM 2) AS INTEGER) * 10
+         ELSE NULL END AS Account_number,
+    SUBSTRING(CustomerID,1,1)                          AS Trading_Code,
+    ReturnID                                           AS Return_ID,
+    COALESCE(SUBSTRING(Carrier,1,LENGTH(carrier)-5),0) AS Carrier,
+    CarrierService                                     AS Carrier_Service,
+    SKU                                                AS SKU_Full,
+    SUBSTRING(SKU,1,5)||SUBSTRING(SKU,LENGTH(sku)-1,LENGTH(sku)) AS SKU_PN_ON,
+    SUBSTRING(SKU,1,5)                                 AS Product_Number,
+    CAST(SUBSTRING(SKU,LENGTH(sku)-1,LENGTH(sku)) AS VARCHAR(8))
+                                                       AS Product_Option_number,
+    datetimerequested                                  AS Date_Time_Requested,
+    CAST(datetimerequested AS DATE)                    AS Date_Requested,
+    EXTRACT(YEAR  FROM datetimerequested)              AS Year_Requested,
+    EXTRACT(MONTH FROM datetimerequested)              AS Month_Requested,
+    ReturnReason                                       AS Return_Reason_Desc,
+    TrackingID                                         AS Tracking_ID,
+    t2.product_brand_desc, t2.Product_Line_Desc, t2.product_desc,
+    t2.Merchandise_Department_Desc, t2.Merchandise_Group_Desc,
+    t2.Merchandise_Range_Desc, t2.Department_Desc, t2.Merch_FMB_Desc,
+    t2.product_line_code, t2.Department_Group_Desc,
+    t3.Product_Status_Desc,
+    t2.Buyer_ID, t2.Range_Group_Desc,
+    Merchandise_Season_Code, Colour_Desc, Size_Desc,
+    t4.Product_Status_Desc,
+    t4.supplier_number, t5.supplier_name,
+    1 AS returns_requests
+FROM zz_return_requested t1
+LEFT JOIN product_summary t2
+       ON SUBSTRING(t1.SKU,1,5) = t2.product_number
+LEFT JOIN product_Status_code t3
+       ON t2.product_status_code = t3.product_status_code
+LEFT JOIN product_option t4
+       ON SUBSTRING(t1.SKU,1,5) = t4.product_number
+      AND CAST(SUBSTRING(SKU,LENGTH(sku)-1,LENGTH(sku)) AS VARCHAR(8))
+          = t4.product_option_number
+LEFT JOIN supplier_new t5
+       ON t4.supplier_number = t5.supplier_number
+WHERE datetimerequested GE DATE - 90;</pre>
+      <p>Key conversions performed in SQL: SKU decomposition (chars 1–5 = product, last 2 = option), CustomerID → numeric account (×10 with check-digit logic), carrier name trim, date parts, and the constant <code class="inline">returns_requests = 1</code> used as the count grain downstream.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary><span class="tag sql">SQL</span>Returns Rate data — demand vs returns at product grain<span class="chev"></span></summary>
+    <div class="det-body">
+      <pre>SEL
+    t1.product_number, t3.product_desc, t3.product_image_URL,
+    t3.product_brand_desc, t3.Product_Line_Desc,
+    t3.Merchandise_Department_Desc, t3.Merchandise_Group_Desc,
+    t3.Merchandise_Range_Desc, t3.Department_Desc, t3.Merch_FMB_Desc,
+    t3.product_line_code, t3.Department_Group_Desc, t3.Buyer_ID,
+    t3.Range_Group_Desc, t4.supplier_number, t5.supplier_name,
+    CAST(t4.supplier_number AS INTEGER)||'_'||TRIM(t5.supplier_name) AS Supplier,
+    SUM(t1.orderline_quantity) AS items_ordered,
+    SUM(CASE WHEN t2.ReturnID IS NOT NULL THEN 1 ELSE 0 END) AS items_returned
+FROM orderline_current t1
+LEFT JOIN warehousedb.zz_return_requested_clean t2
+       ON t1.account_number      = t2.account_number
+      AND t1.trading_code        = t2.trading_code
+      AND t1.order_serial_number = t2.order_number
+      AND t1.orderline_number    = t2.order_item_number
+LEFT JOIN product_summary t3 ON t1.product_number = t3.product_number
+LEFT JOIN product_option  t4 ON t1.product_number = t4.product_number
+                            AND t1.product_option_number = t4.product_option_number
+LEFT JOIN supplier_new    t5 ON t4.supplier_number = t5.supplier_number
+WHERE t1.orderline_status_code = '0'
+  AND date_of_original_order GE DATE - 90
+GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17;</pre>
+      <p>The 4-key join (account + trading code + order + line) matches each order line to a cleaned return request, so <code class="inline">items_returned</code> counts matched lines while <code class="inline">items_ordered</code> sums quantity — the numerator/denominator of Return Rate.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary><span class="tag pq">M</span>Returns Rate data — dedupe to product grain<span class="chev"></span></summary>
+    <div class="det-body">
+      <pre>let
+    Source = Teradata.Database("teradata2690", [HierarchicalNavigation=true,
+        Query=" ... grouped query above ... "]),
+    #"Removed Duplicates" = Table.Distinct(Source, {"PRODUCT_NUMBER"})
+in
+    #"Removed Duplicates"</pre>
+      <div class="note"><strong>Data-quality wrinkle:</strong> the SQL groups by 17 columns including supplier, so a product sold under multiple supplier options produces multiple rows; <code class="inline">Table.Distinct</code> then keeps an <em>arbitrary</em> one. Supplier attribution and the kept items_ordered/items_returned pair are non-deterministic for those products.</div>
+    </div>
+  </details>
+
+  <details>
+    <summary><span class="tag sql">SQL</span>CALENDAR — variant of the financial calendar<span class="chev"></span></summary>
+    <div class="det-body">
+      <pre>SEL calendar_date,
+    CAST(calendar_date AS DATE FORMAT 'e4') (CHAR(3)) AS Weekday,
+    traddly_rel_day_to_now        AS Day_Relevance_to_now,
+    finwkly_date_of_week_end      AS date_of_week_end,
+    finwkly_rel_week_to_now       AS Fin_Week_Relevance_to_now,
+    finwkly_rel_of_period_in_year AS Fin_Period_Relevance_in_Year,
+    finwkly_rel_half_to_now       AS Fin_Half_Relevance_to_now,
+    finwkly_rel_year_to_now       AS Fin_Year_Relevance_to_now,
+    finwkly_name_of_year          AS FIN_YEAR,
+    finwkly_name_of_half_in_year  AS Season,
+    finwkly_no_of_period_in_year  AS Fin_Period,
+    CASE WHEN Fin_Period = 1  THEN '(MAR)' ... WHEN Fin_Period = 12 THEN '(FEB)'
+         ELSE NULL END AS Financial_M,
+    TRIM(FIN_YEAR)||' '||CAST(CAST(Fin_Period AS FORMAT '9(2)') AS CHAR(2))
+        ||' '||Financial_M AS F_Month,
+    CASE WHEN Fin_Period IN (1,2,3)    THEN 'Q1'
+         WHEN Fin_Period IN (4,5,6)    THEN 'Q2'
+         WHEN Fin_Period IN (7,8,9,10) THEN 'Q3'
+         WHEN Fin_Period IN (11,12)    THEN 'Q4' END AS Fin_Quarter,
+    CASE WHEN Fin_Quarter IN ('Q1','Q2') THEN 'H1'
+         WHEN Fin_Quarter IN ('Q3','Q4') THEN 'H2' END AS Fin_Half
+FROM prodvm.calendar_mart
+WHERE calendar_date LE DATE - 1
+  AND Fin_Year_Relevance_to_now GE -1;</pre>
+      <p>Differences vs the Zig Zag calendar: parenthesised month labels, a ready-made <code class="inline">F_Month</code> axis label ("2025 03 (MAY)"), no week-level columns, and a window of current + previous financial year up to yesterday. M only casts the two date columns. This table has <strong>no relationship</strong> in the model — it serves slicers/labels.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary><span class="tag dax">DAX</span>Calculated columns — reason grouping &amp; in-table ranking<span class="chev"></span></summary>
+    <div class="det-body">
+      <p><strong>Return_Reason_Desc (groups)</strong> — maps ~30 verbatim reasons into 5 analytical buckets:</p>
+      <table>
+        <tr><th>Group</th><th>Member reasons</th></tr>
+        <tr><td>Buying</td><td>Looks different to image on site</td></tr>
+        <tr><td>Customer Choice</td><td>Better Price Found Elsewhere · Changed my mind · Doesn't suit me · No longer needed/wanted · Ordered multiple outfit options · Ordered wrong style/size/colour</td></tr>
+        <tr><td>Delivery/Warehouse</td><td>Arrived too late · Arrived Worn · Incorrect item received · Missing Parts or Accessories · Received Item I didn't buy (no refund issued) · Wrong quantity delivered</td></tr>
+        <tr><td>Fit</td><td>Boot Length Too Short/Tall · Calf Too Narrow/Wide · Doesnt fit me too big/small · Doesn't fit properly · Foot Too Long/Narrow/Short/Wide · FOOTWEAR - Item does not fit properly · Ordered more than one size · Product Uncomfortable · Too long · Too short</td></tr>
+        <tr><td>Quality</td><td>Damaged or Defective · Faulty assembly problem · Quality not as expected · Seal Broken</td></tr>
+      </table>
+      <p>Blanks → "(Blank)"; anything unmapped passes through unchanged (SWITCH(TRUE, …) with a fall-through).</p>
+      <p><strong>Returns per Product &amp; Reason</strong> and <strong>Reason Rank within Product</strong>:</p>
+      <pre>Returns per Product &amp; Reason =
+CALCULATE (
+    COUNT ( 'Returns Data'[returns_requests] ),
+    ALLEXCEPT ( 'Returns Data',
+        'Returns Data'[product_number], 'Returns Data'[Return_Reason_Desc] )
+)
+
+Reason Rank within Product =
+RANKX (
+    FILTER ( ALL ( 'Returns Data' ),
+        'Returns Data'[product_number] = EARLIER ( 'Returns Data'[product_number] ) ),
+    VAR ReasonCount =
+        CALCULATE (
+            COUNT ( 'Returns Data'[returns_requests] ),
+            ALLEXCEPT ( 'Returns Data',
+                'Returns Data'[product_number], 'Returns Data'[Return_Reason_Desc] ) )
+    RETURN
+        ReasonCount * 1000000
+            + RANKX ( ALL ( 'Returns Data'[Return_Reason_Desc] ),
+                      'Returns Data'[Return_Reason_Desc], , ASC, DENSE ),
+    , DESC, DENSE
+)</pre>
+      <p>The <code class="inline">× 1,000,000 + alphabetical-rank</code> composite key ranks reasons by count (desc) with a deterministic alphabetical tiebreak. The same trick ranks products on the other table:</p>
+      <pre>Product Rank =
+RANKX (
+    ALL ( 'Returns Rate data' ),
+    'Returns Rate data'[items_returned] * 1000000
+        + RANKX ( ALL ( 'Returns Rate data'[product_number] ),
+                  'Returns Rate data'[product_number], , ASC, DENSE ),
+    , DESC, DENSE
+)</pre>
+    </div>
+  </details>
+
+  <details>
+    <summary><span class="tag dax">DAX</span>Measures — rate, split and top-3 reason labels<span class="chev"></span></summary>
+    <div class="det-body">
+      <pre>Return Rate =
+DIVIDE ( SUM ( 'Returns Rate data'[items_returned] ),
+         SUM ( 'Returns Rate data'[items_ordered] ) )
+
+Returns Requests Measure = SUM ( 'Returns Data'[returns_requests] )
+
+Return Reason % Split =
+DIVIDE (
+    COUNT ( 'Returns Data'[returns_requests] ),
+    CALCULATE (
+        COUNT ( 'Returns Data'[returns_requests] ),
+        ALLEXCEPT ( 'Returns Data', 'Returns Data'[product_number] ) )
+)
+
+#1 Return Reason (Measure) per product =
+CALCULATE (
+    SELECTEDVALUE ( 'Returns Data'[Return_Reason_Desc] ),
+    'Returns Data'[Reason Rank within Product] = 1
+)   -- #2 / #3 identical with rank = 2 / 3</pre>
+      <p><strong>"#1 Return Reason with %"</strong> (and #2/#3, differing only in the rank constant) builds a display label such as <em>Doesn't fit properly (142) — 23.4%</em>:</p>
+      <pre>#1 Return Reason with % =
+VAR CurrentProduct = SELECTEDVALUE ( 'Returns Data'[product_number] )
+VAR TopReason =
+    CALCULATE (
+        FIRSTNONBLANK ( 'Returns Data'[Return_Reason_Desc], 1 ),
+        FILTER ( 'Returns Data',
+            'Returns Data'[product_number] = CurrentProduct
+                &amp;&amp; 'Returns Data'[Reason Rank within Product] = 1 ) )
+VAR TopCounts =
+    CALCULATE (
+        COUNT ( 'Returns Data'[returns_requests] ),
+        FILTER ( 'Returns Data',
+            'Returns Data'[product_number] = CurrentProduct
+                &amp;&amp; 'Returns Data'[Return_Reason_Desc] = TopReason ) )
+VAR TotalProduct =
+    CALCULATE (
+        COUNT ( 'Returns Data'[returns_requests] ),
+        'Returns Data'[product_number] = CurrentProduct )
+VAR TopPercents = DIVIDE ( TopCounts, TotalProduct, 0 )
+RETURN
+IF ( NOT ISBLANK ( TopReason ),
+     TopReason &amp; " (" &amp; FORMAT ( TopCounts, "#,0" ) &amp; ") — "
+               &amp; FORMAT ( TopPercents, "0.0%" ) )</pre>
+    </div>
+  </details>
+
+  <details>
+    <summary><span class="tag model">Model</span>Relationships<span class="chev"></span></summary>
+    <div class="det-body">
+      <table>
+        <tr><th>From (many)</th><th>To (one)</th><th>Type</th></tr>
+        <tr><td>Returns Data[Product_Number]</td><td>Returns Rate data[PRODUCT_NUMBER]</td><td>M:1 · active · single</td></tr>
+      </table>
+      <p>Returns Rate data acts as the product dimension (one row per product, carrying image URL and hierarchy descriptions); Returns Data is the reason-level fact. CALENDAR is disconnected.</p>
+    </div>
+  </details>
+
+</section>
+
+</div>
+
+<script>
+  const tabs = document.querySelectorAll('.tab-btn');
+  const panels = {'tab-zz':'rep-zz','tab-rr':'rep-rr'};
+  tabs.forEach(btn => btn.addEventListener('click', () => {
+    tabs.forEach(b => b.setAttribute('aria-selected', b === btn ? 'true' : 'false'));
+    document.querySelectorAll('.report').forEach(p => p.classList.remove('active'));
+    document.getElementById(panels[btn.id]).classList.add('active');
+  }));
+</script>
+</body>
+</html>

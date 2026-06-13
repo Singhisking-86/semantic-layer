@@ -1,0 +1,80 @@
+/* ============================================================
+   P15–P17 · next profiling batch (run with scripts/run_sql.py)
+   Read-only. 150-day cap everywhere. Teradata dialect.
+   ============================================================ */
+
+/* @name REF-BRIDGE-01_zz_key_formats
+   What do the ZZ keys look like? Length + pattern of ORDERNUMBER,
+   ORDERLINEITEMNUMBER, WAREHOUSEREFERENCE on recent rows. */
+SEL TOP 20
+    ORDERNUMBER,
+    CHARACTER_LENGTH(TRIM(ORDERNUMBER))          AS ordnum_len,
+    ORDERLINEITEMNUMBER,
+    WAREHOUSEREFERENCE,
+    CHARACTER_LENGTH(TRIM(WAREHOUSEREFERENCE))   AS whref_len
+FROM PRODVM.ZZ_RETURN_REQUESTED
+WHERE DATETIMEREQUESTED GE DATE - 7;
+
+/* @name REF-BRIDGE-01_wms_key_formats
+   And the WMS side: ORDER_SERIAL_NUMBER, ORDERLINE_NUMBER, RETURN_NUMBER. */
+SEL TOP 20
+    ORDER_SERIAL_NUMBER,
+    ORDERLINE_NUMBER,
+    RETURN_NUMBER,
+    ACCOUNT_NUMBER,
+    TRADING_CODE
+FROM PRODVM.RETURN_ITEM
+WHERE RETURN_DATE GE DATE - 7;
+
+/* @name REF-BRIDGE-01_via_whref
+   Candidate repair: WAREHOUSEREFERENCE = RETURN_NUMBER. */
+SEL COUNT(*) AS zz_lines,
+    SUM(CASE WHEN ri.RETURN_NUMBER IS NOT NULL THEN 1 ELSE 0 END) AS matched,
+    CAST(SUM(CASE WHEN ri.RETURN_NUMBER IS NOT NULL THEN 1 ELSE 0 END) AS FLOAT)
+        / COUNT(*) AS match_rate
+FROM PRODVM.ZZ_RETURN_REQUESTED r
+LEFT JOIN PRODVM.RETURN_ITEM ri
+       ON TRIM(r.WAREHOUSEREFERENCE) = TRIM(CAST(ri.RETURN_NUMBER AS VARCHAR(30)))
+WHERE r.DATETIMEREQUESTED GE DATE - 150;
+
+/* @name REF-BRIDGE-01_via_whref_line
+   If P15b matches at header level, tighten to line level. */
+SEL COUNT(*) AS zz_lines,
+    SUM(CASE WHEN ri.RETURN_NUMBER IS NOT NULL THEN 1 ELSE 0 END) AS matched_line
+FROM PRODVM.ZZ_RETURN_REQUESTED r
+LEFT JOIN PRODVM.RETURN_ITEM ri
+       ON TRIM(r.WAREHOUSEREFERENCE) = TRIM(CAST(ri.RETURN_NUMBER AS VARCHAR(30)))
+      AND TRIM(CAST(r.ORDERLINEITEMNUMBER AS VARCHAR(10)))
+          = TRIM(CAST(ri.ORDERLINE_NUMBER AS VARCHAR(10)))
+WHERE r.DATETIMEREQUESTED GE DATE - 150;
+
+/* @name REF-VOCAB-01_event_decode
+   Decode the WH event vocabulary (confirms 0097 = credit). */
+SEL *
+FROM PRODVM.RETURN_EVENT_CODE
+ORDER BY 1;
+
+/* @name RET-ORDERSTATUS-01_profile
+   The 6 ORDERSTATUS values — portal-side state signal? */
+SEL ORDERSTATUS,
+    COUNT(*)                   AS lines_,
+    COUNT(DISTINCT RETURNID)   AS returns_
+FROM PRODVM.ZZ_RETURN_REQUESTED
+WHERE DATETIMEREQUESTED GE DATE - 150
+GROUP BY 1
+ORDER BY 2 DESC;
+
+/* @name RET-ORDERSTATUS-01_retailer
+   RETAILER 2-value decode (brand split). */
+SEL RETAILER, COUNT(*) AS lines_, COUNT(DISTINCT RETURNID) AS returns_
+FROM PRODVM.ZZ_RETURN_REQUESTED
+WHERE DATETIMEREQUESTED GE DATE - 150
+GROUP BY 1;
+
+/* @name RET-CDC-01_negative_lag_eyeball
+   Small follow-up: a handful of negative-lag rows for the DQ note. */
+SEL TOP 10 RETURNID, ORDERNUMBER, DATETIMEREQUESTED, INSERTED_ON, UPDATED_ON
+FROM PRODVM.ZZ_RETURN_REQUESTED
+WHERE DATETIMEREQUESTED GE DATE - 150
+  AND INSERTED_ON < DATETIMEREQUESTED
+ORDER BY INSERTED_ON - DATETIMEREQUESTED;

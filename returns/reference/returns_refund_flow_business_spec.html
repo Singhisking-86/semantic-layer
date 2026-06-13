@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "Segoe UI", Arial, sans-serif; background: transparent; padding: 12px 16px 20px; }
+  h2.sr-only { position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0); }
+
+  :root {
+    --navy:    #0B2E4E;
+    --blue:    #065A82;
+    --mid:     #1C7293;
+    --steel:   #2E8DB5;
+    --pale:    #EDF6FB;
+    --border:  #A8D4E8;
+    --line:    #7AAFCB;
+    --teal:    #0D9488;
+    --amber:   #B45309;
+    --amberbg: #FFFBEB;
+    --amberbr: #F5C842;
+    --slate:   #1E293B;
+    --muted:   #64748B;
+    --lite:    #F8FBFD;
+    --white:   #ffffff;
+    --red:     #DC2626;
+    --redbg:   #FEF2F2;
+    --redbr:   #FCA5A5;
+    --green:   #059669;
+    --greenbg: #ECFDF5;
+    --greenbr: #6EE7B7;
+    --purple:  #7C3AED;
+    --purpbg:  #F5F3FF;
+    --purpbr:  #C4B5FD;
+  }
+
+  .flow { display:flex; flex-direction:column; align-items:center; gap:0; }
+
+  .node {
+    border-radius:7px; padding:9px 15px; font-size:12.5px; font-weight:600;
+    text-align:center; line-height:1.4; position:relative; z-index:1;
+    min-width:160px; max-width:210px;
+  }
+  .node.start   { background:var(--navy); color:#fff; border-radius:26px; font-size:11.5px; font-weight:700; letter-spacing:.4px; min-width:150px; }
+  .node.trigger { background:var(--blue); color:#fff; }
+  .node.dec     { background:var(--mid);  color:#fff; border-radius:4px; font-size:11.5px; }
+  .node.action  { background:var(--white); color:var(--slate); border:1.5px solid var(--border); font-weight:500; }
+  .node.sys     { background:var(--pale);  color:var(--blue);  border:1.5px solid var(--border); font-weight:500; }
+  .node.end     { background:var(--teal);  color:#fff; border-radius:26px; font-size:11.5px; }
+  .node.warn    { background:var(--amberbg); color:var(--amber); border:1.5px solid var(--amberbr); font-weight:500; font-size:11.5px; }
+  .node.tracked { background:var(--greenbg); color:#065f46; border:1.5px solid var(--greenbr); font-weight:600; font-size:12px; }
+  .node.sla     { background:var(--redbg); color:var(--red); border:1.5px solid var(--redbr); font-weight:500; font-size:11.5px; }
+  .node.pbi     { background:var(--purpbg); color:var(--purple); border:1.5px solid var(--purpbr); font-weight:500; font-size:11.5px; }
+
+  .arr { width:2px; background:var(--line); margin:0 auto; position:relative; }
+  .arr::after { content:''; position:absolute; bottom:-7px; left:50%; transform:translateX(-50%);
+    border-left:5px solid transparent; border-right:5px solid transparent; border-top:7px solid var(--line); }
+  .arr-s { height:16px; }
+  .arr-m { height:26px; }
+
+  .fork-row { display:flex; align-items:flex-start; gap:16px; justify-content:center; }
+  .fork-col  { display:flex; flex-direction:column; align-items:center; gap:0; }
+
+  .label { font-size:10px; color:var(--muted); padding:2px 5px; white-space:nowrap; margin:2px 0; text-align:center; }
+  .label.strong { color:var(--blue); font-weight:700; }
+  .label.dec    { color:var(--mid);  font-weight:700; }
+
+  .section-label { font-size:10px; font-weight:700; color:var(--line); letter-spacing:.9px; text-transform:uppercase; margin:5px 0 7px; text-align:center; }
+
+  .badge { display:inline-block; border-radius:3px; font-size:9px; font-weight:700; padding:1px 5px; margin-bottom:3px; }
+  .badge.zz { background:var(--blue); color:#fff; }
+  .badge.cs { background:var(--mid);  color:#fff; }
+  .badge.pbi{ background:var(--purple); color:#fff; }
+  .badge.sla{ background:var(--red); color:#fff; }
+
+  .dot-date { font-size:9.5px; font-weight:700; color:var(--blue); display:inline-block; margin:1px 0 2px; letter-spacing:.2px; }
+  .dot-date.d2 { color:var(--mid); }
+  .dot-date.d3 { color:var(--teal); }
+  .dot-date.d4 { color:var(--amber); }
+
+  .sos-row { display:flex; align-items:stretch; gap:0; width:460px; border:1.5px solid var(--border); border-radius:8px; overflow:hidden; margin:0 auto; }
+  .sos-seg { flex:1; padding:7px 6px; text-align:center; font-size:11px; font-weight:600; border-right:1.5px solid var(--border); }
+  .sos-seg:last-child { border-right:none; }
+  .sos-seg .sos-label { font-size:9px; font-weight:500; color:var(--muted); display:block; margin-top:2px; }
+  .seg-a { background:#EFF9FF; color:var(--blue); }
+  .seg-b { background:#E6F7FF; color:var(--mid); }
+  .seg-c { background:#E6FAF6; color:#065f46; }
+  .seg-d { background:#FFF8E1; color:var(--amber); }
+
+  .timeline { display:flex; align-items:center; gap:0; width:460px; margin:6px auto 0; }
+  .tl-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+  .tl-line { flex:1; height:2px; background:var(--line); }
+  .tl-dot.d1 { background:var(--navy); }
+  .tl-dot.d2 { background:var(--blue); }
+  .tl-dot.d3 { background:var(--mid); }
+  .tl-dot.d4 { background:var(--teal); }
+  .tl-dot.d5 { background:var(--amber); }
+
+  .tl-labels { display:flex; justify-content:space-between; width:460px; margin:3px auto 0; }
+  .tl-labels span { font-size:9px; color:var(--muted); text-align:center; width:60px; }
+
+  .comms-row { display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
+  .note-row { display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-top:10px; }
+
+  hr.div { border:none; border-top:1px solid var(--border); margin:16px 0 10px; width:100%; }
+
+  sub-note { font-size:10px; font-weight:400; color:var(--muted); display:block; margin-top:2px; }
+  .sub { font-size:10.5px; font-weight:400; color:rgba(255,255,255,.75); display:block; margin-top:2px; }
+  .sub-dark { font-size:10.5px; font-weight:400; color:var(--muted); display:block; margin-top:2px; }
+</style>
+</head>
+<body>
+<h2 class="sr-only">Returns and refund process flow: customer journey from parcel receipt to refund, including all logistics tracking legs recorded in the N Brown Power BI report.</h2>
+
+<div class="flow">
+
+  <!-- START -->
+  <div class="node start">Customer receives parcel</div>
+  <div class="arr arr-s"></div>
+  <div class="node trigger">
+    Advice note included<br>
+    <span class="sub">28-day return window · QR code + portal steps</span>
+  </div>
+  <div class="arr arr-s"></div>
+
+  <!-- DATE 0 -->
+  <div class="node tracked">
+    <span class="dot-date">① DateReturnRequested</span><br>
+    Customer initiates return request<br>
+    <span class="sub-dark">Via portal or CS — captured in Zig Zag</span>
+  </div>
+  <div class="arr arr-s"></div>
+  <div class="node dec">How does customer initiate?</div>
+
+  <!-- FORK SELF-SERVE vs CS -->
+  <div style="height:22px;position:relative;width:340px;margin:0 auto;">
+    <div style="position:absolute;top:0;left:50%;width:1px;height:100%;background:var(--line);"></div>
+    <div style="position:absolute;top:0;left:0;right:0;height:2px;background:var(--line);"></div>
+  </div>
+
+  <div class="fork-row" style="width:390px;">
+    <!-- LEFT: Self-serve -->
+    <div class="fork-col" style="flex:1;">
+      <div class="label strong">Self-serve</div>
+      <div class="arr arr-s"></div>
+      <div class="node sys"><span class="badge zz">ZIGZAG</span><br>Customer portal<br><span style="font-size:10.5px;font-weight:400">QR code / Help Centre / My Account</span></div>
+      <div class="arr arr-s"></div>
+      <div class="node action">Enter order no. + email<br><span class="sub-dark">or last 4 digits of phone</span></div>
+      <div class="arr arr-s"></div>
+      <div class="node action">Select item(s) &amp; return reason<br><span style="font-size:10px;color:var(--muted)">Randomised order — prevents bias</span></div>
+      <div class="arr arr-s"></div>
+      <div class="node dec" style="font-size:11px;">Return method?</div>
+      <div style="height:14px;position:relative;width:210px;margin:0 auto;">
+        <div style="position:absolute;top:0;left:50%;width:1px;height:100%;background:var(--line);"></div>
+        <div style="position:absolute;top:0;left:0;right:0;height:2px;background:var(--line);"></div>
+      </div>
+      <div style="display:flex;gap:5px;width:218px;justify-content:center;">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:0;flex:1;">
+          <div class="arr arr-s"></div>
+          <div class="node action" style="font-size:10.5px;min-width:0;padding:6px 5px;">Royal Mail<br>drop-off<br><span style="color:var(--teal);font-size:9.5px;font-weight:600">No label</span></div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:0;flex:1;">
+          <div class="arr arr-s"></div>
+          <div class="node action" style="font-size:10.5px;min-width:0;padding:6px 5px;">Parcelshop<br>/ locker<br><span style="color:var(--teal);font-size:9.5px;font-weight:600">No label</span></div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:0;flex:1;">
+          <div class="arr arr-s"></div>
+          <div class="node action" style="font-size:10.5px;min-width:0;padding:6px 5px;">Evri home<br>collection<br><span style="color:var(--mid);font-size:9.5px;font-weight:600">Label emailed</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: CS -->
+    <div class="fork-col" style="flex:1;">
+      <div class="label dec">Contacts CS</div>
+      <div class="arr arr-s"></div>
+      <div class="node sys"><span class="badge cs">CS</span><br>Phone / Chat / Email<br><span style="font-size:10.5px;font-weight:400">Zendesk</span></div>
+      <div class="arr arr-s"></div>
+      <div class="node action">Agent checks item<br>&amp; eligibility</div>
+      <div class="arr arr-s"></div>
+      <div class="node dec" style="font-size:11px;">Route?</div>
+      <div style="height:14px;position:relative;width:200px;margin:0 auto;">
+        <div style="position:absolute;top:0;left:50%;width:1px;height:100%;background:var(--line);"></div>
+        <div style="position:absolute;top:0;left:0;right:0;height:2px;background:var(--line);"></div>
+      </div>
+      <div style="display:flex;gap:5px;width:218px;justify-content:center;">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:0;flex:1;">
+          <div class="arr arr-s"></div>
+          <div class="node action" style="font-size:10.5px;min-width:0;padding:6px 5px;">Direct to<br>customer<br>portal</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:0;flex:1;">
+          <div class="arr arr-s"></div>
+          <div class="node action" style="font-size:10.5px;min-width:0;padding:6px 5px;">Agent raises<br>return<br>on behalf</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:0;flex:1;">
+          <div class="arr arr-s"></div>
+          <div class="node sys" style="font-size:10.5px;min-width:0;padding:6px 5px;"><span class="badge cs" style="font-size:8px;">CS Portal</span><br>Faulty item<br>or &gt;28 days</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MERGE into logistics -->
+  <div style="height:20px;width:2px;background:var(--line);margin:0 auto;position:relative;">
+    <div style="position:absolute;top:0;left:-169px;right:-169px;height:2px;background:var(--line);"></div>
+  </div>
+
+  <!-- ==================== IDLE PERIOD NOTE ==================== -->
+  <div class="node pbi" style="max-width:340px;margin-bottom:0;">
+    <span class="badge pbi">POWER BI</span> Status: <strong>a. Idle Return Requests</strong><br>
+    <span style="font-size:10.5px;font-weight:400;color:#5B21B6;">Parcel not yet handed to carrier — counted separately, excluded from most charts</span>
+  </div>
+  <div class="arr arr-s"></div>
+
+  <!-- ==================== LEG 1 ==================== -->
+  <div class="section-label">
+    ━━━━━ Leg 1 · Request → carrier scan ━━━━━
+  </div>
+  <div class="node tracked">
+    <span class="dot-date d2">② Start_Carrier_Journey</span><br>
+    Parcel first scanned into carrier network<br>
+    <span class="sub-dark">ZZ / EVRI tracking event recorded</span>
+  </div>
+
+  <!-- SoS Leg A annotation -->
+  <div style="display:flex;align-items:center;gap:8px;margin:4px 0;">
+    <div style="width:2px;height:28px;background:var(--line);margin:0 auto;"></div>
+    <div class="node sla" style="min-width:0;padding:5px 10px;font-size:10.5px;">
+      <span class="badge sla">SoS</span> RequestToCarrierSOS<br>
+      <span style="font-weight:400;">Days: DateReturnRequested → Start_Carrier_Journey</span>
+    </div>
+  </div>
+
+  <div class="arr arr-s"></div>
+  <div class="node pbi" style="max-width:340px;">
+    <span class="badge pbi">POWER BI</span> Status: <strong>b. In Transit</strong><br>
+    <span style="font-size:10.5px;font-weight:400;color:#5B21B6;">Live view on "Parcels in the network" page (last 14 days)</span>
+  </div>
+  <div class="arr arr-s"></div>
+
+  <!-- ==================== CARRIER JOURNEY ==================== -->
+  <div class="section-label">
+    ━━━━━ Leg 2 · Carrier transit ━━━━━
+  </div>
+  <div class="node action" style="max-width:280px;">In transit → tracking events logged<br><span class="sub-dark">Zig Zag: DATETIMEINTRANSIT + LASTTRACKINGSTATUS<br>EVRI: JDW_EVENT_CODE + DESPATCH_EVENT_DESC</span></div>
+  <div class="arr arr-s"></div>
+
+  <div class="node tracked">
+    <span class="dot-date d3">③ End_Carrier_Journey</span><br>
+    Last carrier scan / delivered to WH<br>
+    <span class="sub-dark">Carrier network handover complete</span>
+  </div>
+
+  <!-- SoS Leg B annotation -->
+  <div style="display:flex;align-items:center;gap:8px;margin:4px 0;">
+    <div style="width:2px;height:28px;background:var(--line);margin:0 auto;"></div>
+    <div class="node sla" style="min-width:0;padding:5px 10px;font-size:10.5px;">
+      <span class="badge sla">SoS</span> CARRIER_SOS<br>
+      <span style="font-weight:400;">Days: Start_Carrier_Journey → End_Carrier_Journey</span>
+    </div>
+  </div>
+
+  <div class="arr arr-s"></div>
+  <div class="node pbi" style="max-width:340px;">
+    <span class="badge pbi">POWER BI</span> Status: <strong>c. Parcels at WH — WIP</strong><br>
+    <span style="font-size:10.5px;font-weight:400;color:#5B21B6;">At warehouse, processing not yet complete</span>
+  </div>
+  <div class="arr arr-s"></div>
+
+  <!-- ==================== WH ==================== -->
+  <div class="section-label">
+    ━━━━━ Leg 3 · Warehouse processing ━━━━━
+  </div>
+  <div class="node action" style="max-width:280px;">QC inspection by logistics team<br><span class="sub-dark">10-day SLA clock running from Start_Carrier_Journey</span></div>
+  <div class="arr arr-s"></div>
+
+  <div class="node tracked">
+    <span class="dot-date d4">④ DateReturnedWH</span><br>
+    Warehouse scan — return processed<br>
+    <span class="sub-dark">Refund triggered automatically on this scan</span>
+  </div>
+
+  <!-- SoS Leg C annotation -->
+  <div style="display:flex;align-items:center;gap:8px;margin:4px 0;">
+    <div style="width:2px;height:28px;background:var(--line);margin:0 auto;"></div>
+    <div class="node sla" style="min-width:0;padding:5px 10px;font-size:10.5px;">
+      <span class="badge sla">SoS</span> WH_SOS<br>
+      <span style="font-weight:400;">Days: End_Carrier_Journey → DateReturnedWH</span>
+    </div>
+  </div>
+
+  <div class="arr arr-s"></div>
+  <div class="node pbi" style="max-width:340px;">
+    <span class="badge pbi">POWER BI</span> Status: <strong>d. Parcels Processed By WH</strong><br>
+    <span style="font-size:10.5px;font-weight:400;color:#5B21B6;">Return journey complete — counts in SLA metrics</span>
+  </div>
+  <div class="arr arr-s"></div>
+
+  <!-- ==================== SLA OUTCOME ==================== -->
+  <div class="section-label">
+    ━━━━━ 10-day SLA outcome ━━━━━
+  </div>
+
+  <div style="height:14px;position:relative;width:300px;margin:0 auto;">
+    <div style="position:absolute;top:0;left:50%;width:1px;height:100%;background:var(--line);"></div>
+    <div style="position:absolute;top:0;left:0;right:0;height:2px;background:var(--line);"></div>
+  </div>
+  <div style="display:flex;gap:8px;width:320px;justify-content:center;">
+    <div style="display:flex;flex-direction:column;align-items:center;flex:1;">
+      <div class="arr arr-s"></div>
+      <div class="node end" style="min-width:0;padding:7px 8px;font-size:11px;">Within SLA<br><span style="font-weight:400;">≤ 10 days</span></div>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;flex:1;">
+      <div class="arr arr-s"></div>
+      <div class="node warn" style="min-width:0;padding:7px 8px;font-size:11px;">Outside SLA<br><span style="font-weight:400;">&gt; 10 days</span></div>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;flex:1;">
+      <div class="arr arr-s"></div>
+      <div class="node sla" style="min-width:0;padding:7px 8px;font-size:11px;">Not returned<br><span style="font-weight:400;">&gt;10 days, no WH scan</span></div>
+    </div>
+  </div>
+
+  <div class="arr arr-m"></div>
+
+  <!-- ==================== REFUND ==================== -->
+  <div class="section-label">
+    ━━━━━ Refund ━━━━━
+  </div>
+  <div class="node trigger">Refund triggered<br><span class="sub">Automated on DateReturnedWH warehouse scan</span></div>
+  <div class="arr arr-s"></div>
+  <div class="node dec">Payment method?</div>
+
+  <div style="height:14px;position:relative;width:240px;margin:0 auto;">
+    <div style="position:absolute;top:0;left:50%;width:1px;height:100%;background:var(--line);"></div>
+    <div style="position:absolute;top:0;left:0;right:0;height:2px;background:var(--line);"></div>
+  </div>
+  <div style="display:flex;gap:12px;justify-content:center;width:260px;">
+    <div style="display:flex;flex-direction:column;align-items:center;flex:1;">
+      <div class="arr arr-s"></div>
+      <div class="node end" style="min-width:0;padding:8px 10px;font-size:11.5px;">Credit account<br><span style="font-weight:400;">Immediate</span></div>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;flex:1;">
+      <div class="arr arr-s"></div>
+      <div class="node end" style="min-width:0;padding:8px 10px;font-size:11.5px;">Card payment<br><span style="font-weight:400;">+5 working days</span></div>
+    </div>
+  </div>
+
+  <!-- ==================== SoS SUMMARY BAR ==================== -->
+  <hr class="div">
+  <div class="section-label" style="margin-bottom:10px;">Speed of service — how each leg is measured</div>
+
+  <div class="sos-row">
+    <div class="sos-seg seg-a">
+      RequestToCarrierSOS
+      <span class="sos-label">① → ② · Customer to carrier</span>
+    </div>
+    <div class="sos-seg seg-b">
+      CARRIER_SOS
+      <span class="sos-label">② → ③ · Carrier transit</span>
+    </div>
+    <div class="sos-seg seg-c">
+      WH_SOS
+      <span class="sos-label">③ → ④ · WH processing</span>
+    </div>
+    <div class="sos-seg seg-d">
+      EndToEndSOS
+      <span class="sos-label">① → ④ · Full journey</span>
+    </div>
+  </div>
+
+  <div class="timeline">
+    <div class="tl-dot d1"></div>
+    <div class="tl-line"></div>
+    <div class="tl-dot d2"></div>
+    <div class="tl-line"></div>
+    <div class="tl-dot d3"></div>
+    <div class="tl-line"></div>
+    <div class="tl-dot d4"></div>
+    <div class="tl-line"></div>
+    <div class="tl-dot d5"></div>
+  </div>
+  <div class="tl-labels">
+    <span>Return<br>requested</span>
+    <span>Carrier<br>scan-in</span>
+    <span>Carrier<br>handover</span>
+    <span>WH<br>processed</span>
+    <span>Refund<br>issued</span>
+  </div>
+
+  <!-- 10-day SLA clock note -->
+  <div style="margin-top:8px;background:var(--redbg);border:1px solid var(--redbr);border-radius:6px;padding:7px 14px;font-size:11px;color:var(--red);text-align:center;max-width:460px;">
+    <strong>10-day SLA clock</strong> starts at ② Start_Carrier_Journey and stops at ④ DateReturnedWH.
+    Parcels scanned &lt; 10 days ago are excluded from SLA % charts (not yet due).
+  </div>
+
+  <!-- ==================== COMMS ==================== -->
+  <hr class="div">
+  <div class="section-label" style="margin-bottom:8px;">Customer comms along the way</div>
+  <div class="comms-row">
+    <div class="node warn" style="min-width:0;padding:6px 10px;font-size:11px;">① Return<br>confirmation<br><span style="font-size:9.5px;color:var(--muted)">via Zigzag</span></div>
+    <div style="align-self:center;color:var(--line);font-size:15px;">→</div>
+    <div class="node warn" style="min-width:0;padding:6px 10px;font-size:11px;">② Drop-off<br>confirmed<br><span style="font-size:9.5px;color:var(--muted)">via JD Williams</span></div>
+    <div style="align-self:center;color:var(--line);font-size:15px;">→</div>
+    <div class="node warn" style="min-width:0;padding:6px 10px;font-size:11px;">③ Processing<br>refund<br><span style="font-size:9.5px;color:var(--muted)">within 5 days</span></div>
+    <div style="align-self:center;color:var(--line);font-size:15px;">→</div>
+    <div class="node warn" style="min-width:0;padding:6px 10px;font-size:11px;">④ Refund<br>processed<br><span style="font-size:9.5px;color:var(--muted)">confirmation</span></div>
+  </div>
+
+  <!-- ==================== DATA SOURCES ==================== -->
+  <hr class="div">
+  <div class="section-label" style="margin-bottom:8px;">Power BI data sources (Teradata)</div>
+  <div class="note-row">
+    <div class="node pbi" style="min-width:0;padding:7px 12px;font-size:11px;max-width:none;">
+      <span class="badge pbi">Returns</span> One row per parcel · All status flags, SoS days, SLA outcome
+    </div>
+    <div class="node pbi" style="min-width:0;padding:7px 12px;font-size:11px;max-width:none;">
+      <span class="badge pbi">ZZ Tracking</span> Scan events per parcel from Zig Zag
+    </div>
+    <div class="node pbi" style="min-width:0;padding:7px 12px;font-size:11px;max-width:none;">
+      <span class="badge pbi">EVRI Tracking</span> Scan events per parcel from EVRI
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
