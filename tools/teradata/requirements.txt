@@ -1,0 +1,3 @@
+teradatasql>=20.0
+pandas>=2.0
+pyarrow>=14.0   # only needed for --out *.parquet

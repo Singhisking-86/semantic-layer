@@ -14,6 +14,34 @@ for active context.
 | `merchandising/` | STUB | Merchandising semantic layer — not started |
 | `contacts/` | STUB | Cross-domain contact events — not started |
 
+## Teradata tool (cross-domain)
+
+`tools/teradata/pull.py` — run any SQL file or inline query against Teradata,
+preview in terminal or save to CSV / Parquet. One-time setup per machine:
+
+```bash
+cd tools/teradata
+cp credentials.example.json credentials.json   # fill in user/password
+pip install -r requirements.txt
+```
+
+**From repo root — one-liner pattern:**
+```bash
+# preview
+python tools/teradata/pull.py --sql returns/sql/open/P15_P17_next_batch.sql
+
+# save to CSV
+python tools/teradata/pull.py --sql returns/sql/open/P15_P17_next_batch.sql \
+  --out returns/data/profiling_results/P15_result.csv
+
+# inline SQL
+python tools/teradata/pull.py --sql-text "SEL TOP 10 * FROM PRODVM.ZZ_RETURN_REQUESTED"
+```
+
+`credentials.json` is git-ignored — never committed. Each domain's existing
+`scripts/run_sql.py` (where present) handles multi-statement @name → CSV runs;
+`pull.py` is for ad-hoc and single-query pulls.
+
 ## Shared resources
 
 - `shared/ontology.md` — enterprise entity glossary (Customer, Order, Product,
