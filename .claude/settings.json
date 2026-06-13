@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -f tools/teradata/credentials.json ] && python -c \"import teradatasql\" 2>/dev/null && echo '{}' || python -c \"\nimport pathlib, json, subprocess, sys\ncreds = pathlib.Path('tools/teradata/credentials.json')\nhas_driver = subprocess.run(['python','-c','import teradatasql'], capture_output=True).returncode == 0\nif not creds.exists() and not has_driver:\n    msg = '\\u26a0\\ufe0f  Teradata not configured. Run setup:\\n  cd tools/teradata\\n  cp credentials.example.json credentials.json   # then add your username + password\\n  pip install -r requirements.txt'\nelif not creds.exists():\n    msg = '\\u26a0\\ufe0f  Teradata credentials missing. Run:\\n  cd tools/teradata\\n  cp credentials.example.json credentials.json   # then add your username + password'\nelif not has_driver:\n    msg = '\\u26a0\\ufe0f  Teradata driver not installed. Run:\\n  pip install -r tools/teradata/requirements.txt'\nelse:\n    sys.exit(0)\nprint(json.dumps({'systemMessage': msg}))\n\"",
+            "statusMessage": "Checking Teradata setup..."
+          }
+        ]
+      }
+    ]
+  }
+}
